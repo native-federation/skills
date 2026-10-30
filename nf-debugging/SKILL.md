@@ -38,9 +38,12 @@ Go in this order. Each step rules out a whole class of causes.
 4. **Fetch the remote's `remoteEntry.json` directly.** Check that the `exposes` key matches what
    the host passes to `loadRemoteModule`, and check the `shared` entries (versions, `singleton`,
    `strictVersion`, `requiredVersion`).
-5. **Check browser storage (v4).** The orchestrator may be using a cached remote entry. Clear site
-   data and reload. If the problem disappears, it was stale state. See
-   nf-development `references/browser-storage.md`.
+5. **Check the orchestrator's cache (v4).** The orchestrator may be using a cached remote entry.
+   Since orchestrator 4.7 it publishes where its cache lives on `globalThis.__NF_ORCHESTRATOR__`, so
+   you don't need to know the host's config. Run
+   [scripts/dump-orchestrator-storage.js](scripts/dump-orchestrator-storage.js) to see it. To confirm
+   it's stale state, clear site data and reload. See
+   [references/orchestrator-storage-hook.md](references/orchestrator-storage-hook.md).
 6. **Check the network tab.** Look for 404s on bundles and CORS errors, and check which origin each
    shared package was loaded from.
 7. **Narrow it down to a reproduction.** If the cause is still unclear, see
@@ -71,7 +74,7 @@ Paste these into the page's DevTools console, or run them through a browser-auto
 | Script | What it does |
 |---|---|
 | [scripts/dump-import-map.js](scripts/dump-import-map.js) | Prints every import map in the DOM as JSON |
-| TODO: `dump-orchestrator-storage.js` | List (and optionally clear) the orchestrator's cached remote entries |
+| [scripts/dump-orchestrator-storage.js](scripts/dump-orchestrator-storage.js) | Prints the orchestrator's cached state (remotes, shared/scoped externals, chunks) per namespace. Uses `__NF_ORCHESTRATOR__` on ≥ 4.7 and probes the default namespace on older versions |
 | TODO: `check-singleton.js` | Detect whether a shared package was loaded from more than one URL |
 | TODO: `compare-remote-entries.js` | Fetch every remote entry from the manifest and diff the shared versions |
 
@@ -79,6 +82,7 @@ Paste these into the page's DevTools console, or run them through a browser-auto
 
 | File | Read when… |
 |---|---|
+| [references/orchestrator-storage-hook.md](references/orchestrator-storage-hook.md) | Reading the orchestrator's cache by hand, or the dump script doesn't find anything |
 | [references/devtools-extension.md](references/devtools-extension.md) | The app is on the v4 orchestrator and the Chrome extension is available |
 | [references/error-catalogue.md](references/error-catalogue.md) | The error isn't in the table above |
 | [references/repro.md](references/repro.md) | The cause isn't clear after triage and you need to isolate it |
