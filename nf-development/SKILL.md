@@ -1,6 +1,13 @@
 ---
 name: nf-development
-description: Native Federation development guide — terminology, configuration, dependency sharing and architecture for ESM + import-map based micro frontends (@softarc/native-federation, @angular-architects/native-federation, the native-federation orchestrator). Use this skill whenever the user sets up, configures, optimizes or migrates a federated app: hosts/remotes, remoteEntry.json, federation.config.(m)js, shared dependencies, shared mappings, the orchestrator, Angular or React integration, v3→v4 migration, or mixing Native and webpack Module Federation — even if they don't say "Native Federation" explicitly. For runtime failures in the browser, use the nf-debugging skill.
+description: >-
+  Native Federation development guide — terminology, configuration, dependency sharing and architecture for ESM
+  + import-map based micro frontends (@softarc/native-federation, @angular-architects/native-federation, the
+  native-federation orchestrator). Use this skill whenever the user sets up, configures, optimizes or migrates a
+  federated app: hosts/remotes, remoteEntry.json, federation.config.(m)js, shared dependencies, shared mappings,
+  the orchestrator, Angular or React integration, v3→v4 migration, or mixing Native and webpack Module
+  Federation — even if they don't say "Native Federation" explicitly. For runtime failures in the browser, use
+  the nf-debugging skill.
 license: MIT
 metadata:
   author: Copyright 2026 The native-federation team
