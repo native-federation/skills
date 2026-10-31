@@ -99,9 +99,16 @@ diff <(curl -s <good>/remoteEntry.json | jq -S .) <(curl -s <bad>/remoteEntry.js
 
 - Call `read_console_messages` and `read_network_requests` once **before** loading the page: tracking starts on the
   first call.
-- Network requests from the page load are then captured, but init-time console messages may still be missing.
-  Messages logged after the tool attached are returned. If init-time lines are missing, use `nf-capture.mjs`, ask the
-  user for the console (Preserve log), or re-trigger the failure from `javascript_tool`:
+- `read_network_requests` can miss the federation fetches entirely, even when tracking started before the reload:
+  the manifest and every `remoteEntry.json` were absent while the page fetched them (seen when served from the HTTP
+  cache). Treat an empty list as "unknown", not "not fetched", and cross-check with the Performance API, which
+  also catches a manifest served from an API path without `.json`:
+  `performance.getEntriesByType('resource').filter((e) => e.initiatorType === 'fetch').map((e) => [e.name, e.responseStatus, e.transferSize])`
+  (`transferSize: 0` means cache or a cross-origin response without `Timing-Allow-Origin`). For status,
+  `content-type` and body, `fetch(url, { cache: 'no-store' })` the entry yourself.
+- Init-time console messages may still be missing. Messages logged after the tool attached are returned. If
+  init-time lines are missing, use `nf-capture.mjs`, ask the user for the console (Preserve log), or re-trigger the
+  failure from `javascript_tool`:
   `await importShim('<remote>/<key>').catch((e) => e.message)` (or `import()` in native mode) returns the same error text.
 - Run a console script with `javascript_tool` (paste the file; it is one expression). Read its output with
   `read_console_messages` (pattern: a key you expect), not from the tool's return value, which may redact values such
