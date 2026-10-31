@@ -27,8 +27,9 @@ How it resolves (3.x and 4.x behave the same):
 ## Reading the evidence
 
 Step 2 identifies the runtime by the shape of `globalThis.__NATIVE_FEDERATION__`. If the global also holds
-orchestrator records, or classic calls throw `Cannot read properties of undefined (reading 'get')` on a page that runs
-the orchestrator, two runtimes share the global: see [More than one orchestrator](orchestrator.md#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps). Then run
+orchestrator records, or classic calls throw `Cannot read properties of undefined` on a page where the orchestrator
+created the global first (`(reading 'set')` from `initFederation`, `(reading 'get')`/`(reading 'has')` from
+`loadRemoteModule`), two runtimes share the global (if the classic runtime ran first, nothing throws): see [More than one orchestrator](orchestrator.md#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps). Then run
 [scripts/dump-classic-state.js](../scripts/dump-classic-state.js) with Step 5 (there is no cache, so Step 6 doesn't apply). Two
 `externals` rows with the same `pkg` are two instances.
 
@@ -92,7 +93,7 @@ the orchestrator, two runtimes share the global: see [More than one orchestrator
 - **Fix direction:** list every remote, including indirect ones, in the shell manifest, and call `initFederation`
   only in the shell. Load remotes that are unknown at deploy time, or that need a retry, with
   `loadRemoteModule({ remoteEntry, exposedModule })`. A 404 on the shell's own `remoteEntry.json` (fetched relative to the
-  page) leaves its shared packages unmapped: serve it next to `index.html`, or on 3.x pass
+  page) makes `initFederation` reject (typically a JSON `SyntaxError`), so no import map is written at all: serve it next to `index.html`, or on 3.x pass
   `initFederation(manifest, { deployUrl })`; classic 4.x has no such option.
 - **Applies to:** classic runtime. On the orchestrator, late remotes use `initRemoteEntry(url, name)`, which also appends a complementary map
   and can't change the existing mappings. A remote that failed at init is not retried automatically; register it

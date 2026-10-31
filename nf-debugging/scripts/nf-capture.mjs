@@ -4,12 +4,17 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
+const [url, ...args] = process.argv.slice(2);
+if (!url || url === '--help') {
+  console.error('usage: node nf-capture.mjs <url> [--wait ms] [--profile dir] [--headed]');
+  process.exit(url ? 0 : 1);
+}
+
 const require = createRequire(join(process.cwd(), 'noop.js'));
 const { chromium } = (() => {
   try { return require('playwright'); } catch { return require('playwright-core'); }
 })();
 
-const [url, ...args] = process.argv.slice(2);
 const opt = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
 const waitMs = Number(opt('--wait', 2000));
 const profile = opt('--profile');
@@ -23,7 +28,7 @@ const launch = async () => {
   return (await chromium.launch(options)).newContext();
 };
 
-const report = { url, console: [], pageErrors: [], failedRequests: [], scripts: [] };
+const report = { url, console: [], pageErrors: [], failedRequests: [], entries: [], scripts: [] };
 const context = await launch();
 const page = context.pages()[0] ?? (await context.newPage());
 
@@ -42,6 +47,12 @@ page.on('response', (r) => {
   if (r.status() >= 400) report.failedRequests.push({ url: r.url(), status: r.status() });
   // es-module-shims re-runs fetched sources from blob: URLs; only the original fetch URL is useful.
   if (/^https?:.*\.m?js(\?|$)/.test(r.url())) report.scripts.push(r.url());
+  // Manifest and remoteEntry.json: an HTML body here is an SPA fallback.
+  if (/^https?:[^?#]*\.json([?#]|$)/.test(r.url())) {
+    const entry = { url: r.url(), status: r.status(), contentType: r.headers()['content-type'] };
+    report.entries.push(entry);
+    pending.push(r.text().then((body) => (entry.htmlBody = body.trimStart().startsWith('<')), () => {}));
+  }
 });
 
 await page.goto(url, { waitUntil: 'load' });

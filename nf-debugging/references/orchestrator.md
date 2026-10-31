@@ -22,17 +22,63 @@ Live docs: [Configuration](https://native-federation.com/docs/v4/orchestrator/co
 - It reads v3 (flat `shared`) and v4 (flat or dense) remote entries alike. Classify each participant
   separately (Step 2).
 
+Contents: [Reading the evidence](#reading-the-evidence):
+[identify the runtime](#identify-the-runtime-step-2) ·
+[logging](#turn-on-logging-step-3) ·
+[storage](#find-and-read-storage-step-6) ·
+[cache rules](#cache-rules-step-8) ·
+[common failures](#what-common-failures-look-like) ·
+[DevTools extension](#devtools-extension)
+
+[Failure modes](#failure-modes):
+- [Scoped copy: a framework or library runs twice, no warning](#scoped-copy-a-framework-or-library-runs-twice-no-warning)
+- [Missing entry point in the serving build: `NG0203` once `toSignal()` / `rxjs-interop` runs](#missing-entry-point-in-the-serving-build-ng0203-once-tosignal--rxjs-interop-runs)
+- [Stale cached remote: a deploy doesn't show, or it fails only on reload](#stale-cached-remote-a-deploy-doesnt-show-or-it-fails-only-on-reload)
+- [Remote absent: `Remote '<r>' is not initialized.`](#remote-absent-remote-r-is-not-initialized)
+- [Exposed module not found: `Exposed module '<key>' from remote '<r>' not found in storage.`](#exposed-module-not-found-exposed-module-key-from-remote-r-not-found-in-storage)
+- [Silent version skew: a remote runs a shared version outside its range](#silent-version-skew-a-remote-runs-a-shared-version-outside-its-range)
+- [Late remote (`initRemoteEntry`): scoped although a global choice would fit, or ignored](#late-remote-initremoteentry-scoped-although-a-global-choice-would-fit-or-ignored)
+- [Init signal missed: the remote never mounts, no error, no failed request](#init-signal-missed-the-remote-never-mounts-no-error-no-failed-request)
+- [Integrity and Trusted Types: a module is blocked](#integrity-and-trusted-types-a-module-is-blocked)
+- [Static import map replaced: hand-written mappings stop resolving](#static-import-map-replaced-hand-written-mappings-stop-resolving)
+- [More than one orchestrator on the page: unpredictable versions or maps](#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps)
+- [Serving-build choice in dev: the static build's copy wins over the dev-served one](#serving-build-choice-in-dev-the-static-builds-copy-wins-over-the-dev-served-one)
+- [Version stamps: `Version '' is not a valid version.`](#version-stamps-version--is-not-a-valid-version)
+
 ## Reading the evidence
+
+### Identify the runtime (Step 2)
+
+`detect-runtime.js` prints its verdict and these signals:
+
+| Evidence | Means |
+|---|---|
+| `globalThis.__NF_ORCHESTRATOR__.storage` present | Orchestrator ≥ 4.7; its entry gives the `version` and storage `type`. More than one entry is [more than one orchestrator](#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps) |
+| `globalThis.__NATIVE_FEDERATION__.externals instanceof Map` | Classic runtime (`@softarc/native-federation-runtime`, also the v3 Angular adapter). Maps next to orchestrator records or a descriptor: two runtimes on one page, the same [unsupported setup](#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps) |
+| `globalThis.__NATIVE_FEDERATION__` has `remotes`/`shared-externals`, or storage has `<ns>.remotes` | Orchestrator (the default namespace is the same name as the classic global, so check the shape) |
+| Import-map keys like `mfe1/./Component` | A weak hint for the orchestrator only: `/./` is a convention, not enforced. Storage shape and the descriptor decide |
+| `importmap-shim` maps, `typeof importShim === 'function'` | Shim mode (es-module-shims). Both runtimes can use it, so it does not identify the runtime. The Angular adapters default to it |
+| `window.__NF_REGISTRY__` | The registry script (`init-registry.mjs`) is loaded. Most npm-built shells don't have it, so its absence proves nothing, unless a remote's code throws reading `onReady` of undefined ([init signal missed](#init-signal-missed-the-remote-never-mounts-no-error-no-failed-request)) |
+| `[ng-version]` attribute | The shell's Angular version. 20 or 21 plus the orchestrator usually means the v4-bridge package |
+
+**No descriptor on an orchestrator page** (the shell may have disabled it, where the version supports that, or the
+orchestrator predates it): probe instead.
+`__NATIVE_FEDERATION__['cache-state']` (4.8+) is written before commit, so it exists even when init fails;
+`['shared-externals']` and `<ns>.remotes` storage keys also identify the orchestrator. A custom storage adapter is
+invisible to probing; with a descriptor (`type: 'custom'`), only its `get()` reads it.
 
 ### Turn on logging (Step 3)
 
 Logging is bring-your-own: the default is `logger: noopLogger`, `logLevel: 'error'`, so the orchestrator prints
-**nothing, not even errors**. Init still rejects with an `NFError`
-(check `err.cause`). To debug, the shell passes `consoleLogger` with `logLevel: 'debug'`.
+**nothing, not even errors**. The one exception is a failed `initRemoteEntry`, which always prints
+`Failed to initialize remote entry, continuing anyway.` (`console.warn`, no detail). Init still rejects with an
+`NFError`, but its message is generic (e.g. `Failed to fetch manifest`, `Could not create ImportMap.`). Only phase-3
+rejections (`Could not determine shared externals …`, `Could not pool shared externals …`) carry `err.cause`; the
+detail is in the log lines. To debug, the shell passes `consoleLogger` with `logLevel: 'debug'`.
 
 | Shell | Default | To see more |
 |---|---|---|
-| Angular adapter (`@angular-architects/native-federation` 22+, v4-bridge) | `consoleLogger`; the level depends on the adapter line | check which logger and level the adapter's `initFederation` passes to the orchestrator, then raise the level (`{ logLevel: 'debug' }` in `main.ts`). On the Angular 20 bridge, logging defaults to `debug` and the option is `logging`, not `logLevel` |
+| Angular adapter (`@angular-architects/native-federation` 22+, v4-bridge) | `consoleLogger`; the level depends on the adapter line | check which logger and level the adapter's `initFederation` passes to the orchestrator, then raise the level (`{ logLevel: 'debug' }` in `main.ts`). On the Angular 20 bridge and adapters ≤ 21.2.7 / ≤ 22.0.5, logging defaults to `debug` and the option is `logging`, not `logLevel` |
 | Direct `initFederation` | silent | `import { consoleLogger } from '@softarc/native-federation-orchestrator/options'`, then pass `{ logger: consoleLogger, logLevel: 'debug' }` |
 | quickstart.mjs | whatever the quickstart page passes | rebuild not possible; read storage instead |
 | Custom orchestrator or logger | whatever it passes | lines may read `[<n>]: msg` without the `[NF]` prefix; `<n>` is still the phase |
@@ -82,15 +128,15 @@ globalThis.__NF_ORCHESTRATOR__ = { storage: { // one entry per storageNamespace
 - **Exactly one namespace is expected.** More than one, or a `version` that differs from the installed package,
   means more than one orchestrator on the page. That is unsupported, and it is the finding
   ([More than one orchestrator](#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps)).
-- **No descriptor** means the shell disabled it, the orchestrator is < 4.7, the classic runtime is in use, or the
+- **No descriptor** means the shell disabled it (where the version supports that), the orchestrator is < 4.7, the classic runtime is in use, or the
   global wasn't writable. A failed init still publishes it, so absence never means "init failed". The dump script then probes the default namespace in all three built-in storages. A custom
   namespace or storage has to be found in the shell's `initFederation` call.
 - **Shells may keep their own keys** under the namespace (e.g. `__NATIVE_FEDERATION__.settings` with a `tag` that
   changes the manifest URL). The dump lists them under `values` too. Read them: a per-browser flag explains
   "works on my machine".
 - `exposeStorageGetter: false` (4.7+) removes only `get`.
-  // TODO: if https://github.com/native-federation/orchestrator/issues/131 makes the descriptor opt-in
-  (`profile.enableDebugging`), tell agents to ask the shell to enable it.
+  <!-- TODO: if https://github.com/native-federation/orchestrator/issues/131 makes the descriptor opt-in
+  (`profile.enableDebugging`), tell agents to ask the shell to enable it. -->
 
 Run [scripts/dump-orchestrator-storage.js](../scripts/dump-orchestrator-storage.js). Next to the raw values it
 returns `verdicts`, one row per shared copy, flattened from `shared-externals`.
@@ -171,7 +217,7 @@ Why a row is `scope`: see "Scoped copy" under Failure modes.
 | New URL for a known remote | `initFederation` overrides it (`profile.overrideCachedRemotes: 'init-only'`, the default; `'never'`, also set by the opt-in `cachingProfile`, keeps the old one). Since 4.8, `initRemoteEntry` **never** overrides: warn `Already initialized from …`. `'always'` is deprecated and behaves like `'init-only'` |
 | Remote removed from the manifest | Still served from storage (`profile.mergeManifests: true`, the default, 4.9). With `false`, it's dropped |
 | Orchestrator version changed | 4.8+: `cache-state.version` ≠ running version clears every key once (one cold init). ≤ 4.7: no stamp, so a new orchestrator reads the old shape until you clear storage by hand |
-| Storage write fails (quota) | One warn `Could not save '<key>' to storage; …`; the page runs from memory and the next page starts cold |
+| Storage write fails (quota) | 4.9+: one warn `Could not save '<key>' to storage; …`; the page runs from memory and the next page starts cold. ≤ 4.8: the write throws and init fails |
 | `clearStorage: true` | Clears on every init |
 
 To prove that a cache is the cause: clear site data (or remove the `<namespace>.*` keys), reload twice, and
@@ -188,7 +234,7 @@ verbatim; `<…>` marks shortened parts.
 | **remoteEntry 404** (remote not deployed or wrong manifest URL) | `[NF][1]: Could not fetch remote 'team/mfe1'. skipping init. NFError: Fetch of 'http://localhost:4201/remoteEntry.json' returned 404 - Not Found` (warning), then on load `[NF][6]: Failed to load module team/mfe1/./Component: {error: NFError: Remote 'team/mfe1' is not initialized.}` | `failedRequests` (404 on `remoteEntry.json`). The remote is absent from the import map and from storage `remotes` | Exposes mismatch and resolution. Init does **not** fail (unless `strict.strictRemoteEntry`), so "not initialized" is a symptom: the cause is the earlier `[NF][1]` warning. No automatic retry; the failed remote is never stored, so `initRemoteEntry('<url>', '<r>')` loads it later in the same page |
 | **Missing shared dep** (package dropped from one remote's `shared`) | `Unable to resolve specifier '@internal/logging' imported from http://localhost:4201/Component.js` (page error). **No `[NF]` log** | `pageErrors`. The specifier is absent from every map. The importer URL names the build that lacks the share | Network and cache. The map is complete for what was declared, so the cause is in build output (Step 7) |
 | **Exposes key mismatch** | `[NF][6]: Failed to load module mfe2/./Component: {error: NFError: Exposed module './Component' from remote 'mfe2' not found in storage.}` | Import map has `mfe2/./Cmp`. Storage `remotes.mfe2.exposes[].moduleName`. At debug, `[DEBUG][1]: Fetched 'mfe2' <…> exposing: [{"key":"./Cmp",<…>}]` | Network (the entry loaded fine). If the live entry has the right key, it's a stale cache instead (next row) |
-| **Stale persistent cache** (localStorage, default profile: `overrideCachedRemotes: 'init-only'` + `overrideCachedRemotesIfURLMatches: false`; remote redeployed at the **same** URL with a renamed file) | `[DEBUG][1]: Found remote 'team/mfe1' in storage, omitting fetch.`, then `Failed to find a valid digest in the 'integrity' attribute for resource 'http://localhost:4201/Component.js' with computed SHA-384 integrity '<…>'. The resource has been blocked.` and page error `Unable to fetch http://localhost:4201/Component.js - see network log for details.` | `failedRequests` 404 on a remote module. **No** `remoteEntry.json` request. Storage `type: localStorage`, `remotes[…].exposes[].file` differs from the live entry | Tampering: the SRI error hashes the 404 body. A cold run (fresh `--profile`) works, which confirms the cache. The default refetches a cached remote only when its manifest URL changes. `cachingProfile` (`'never'`) never refetches |
+| **Stale persistent cache** (localStorage, default profile: `overrideCachedRemotes: 'init-only'` + `overrideCachedRemotesIfURLMatches: false`; remote redeployed at the **same** URL with a renamed file) | `[DEBUG][1]: Found remote 'team/mfe1' in storage, omitting fetch.`, then `Failed to find a valid digest in the 'integrity' attribute for resource 'http://localhost:4201/Component.js' with computed SHA-384 integrity '<…>'. The resource has been blocked.` and page error `Unable to fetch http://localhost:4201/Component.js - see network log for details.` | `failedRequests` 404 on a remote module. **No** `remoteEntry.json` request (none in `entries`). Storage `type: localStorage`, `remotes[…].exposes[].file` differs from the live entry | Tampering: the SRI error hashes the 404 body. A cold run (fresh `--profile`) works, which confirms the cache. The default refetches a cached remote only when its manifest URL changes. `cachingProfile` (`'never'`) never refetches |
 | **Strict version conflict** (`strictVersion: true`, ranges don't overlap) | **Nothing**, even at debug | Import map `scopes["http://localhost:4202/"]` maps `rxjs`. `sharedLoads.duplicates` lists `rxjs` from two origins. Storage `shared-externals.__GLOBAL__.rxjs.versions[]`: `action: "scope"` | "No error means healthy". This conflict shows up only as a scope and a duplicate |
 | **Non-strict version conflict** (`strictVersion: false`) | **Nothing**, even at debug | Only storage: `versions[]` row with `action: "skip"`. The remote silently runs the shared version outside its declared range | Duplicates (there are none). Look here when a remote misbehaves on an API that differs between versions |
 | **Framework conflict in a pool** (`@angular/*` 22.1.0 vs shell 22.2.3, pool `ng-core`) | `[NF][3]: [__GLOBAL__][pool:ng-core] 'mfe2' is islanded: its range rejects '@angular/common@22.2.3' of the elected build '__NF-HOST__'. All 11 of its entrypoints are scoped for it.` (warning) | `sharedLoads.duplicates` lists every `@angular/*` from two origins. Import map scope for the remote. No runtime error until something crosses the boundary | Missing shares. Read [pooling.md](pooling.md) |
@@ -196,7 +242,7 @@ verbatim; `<…>` marks shortened parts.
 
 `@nf-internal/chunk-*` mapped under two origins is expected when a remote is scoped; `nf-capture` leaves it out
 of `sharedLoads.duplicates`.
-// TODO: verify the classic runtime (v3) equivalents on a running v3 app; only its source was read.
+<!-- TODO: verify the classic runtime (v3) equivalents on a running v3 app; only its source was read. -->
 
 ## DevTools extension
 
@@ -268,7 +314,7 @@ Most common first. Pooling's own failure modes are in [pooling.md](pooling.md), 
   renamed; an SRI block whose computed hash is that of the 404 body (`Failed to find a valid digest in the
   'integrity' attribute …`); `Exposed module '<key>' from remote '<r>' not found in storage.` for a key the new
   entry has. Debug log: `[DEBUG][1]: Found remote '<r>' in storage, omitting fetch.`
-- **Evidence:** Step 4: no `remoteEntry.json` request for that remote. Step 6: storage `type` is
+- **Evidence:** Step 4: no `remoteEntry.json` request for that remote (absent from nf-capture's `entries`). Step 6: storage `type` is
   `localStorage`/`sessionStorage`, and `remotes[<r>].exposes`/`scopeUrl` differ from the live entry. Step 8: a
   cold run (clear site data) works.
 - **Applies to:** orchestrator ≥ 4.8 clears the whole cache once when `cache-state.version` differs from the
@@ -284,7 +330,8 @@ Most common first. Pooling's own failure modes are in [pooling.md](pooling.md), 
 - **Symptoms:** `[NF][1]: Could not fetch remote '<r>'. skipping init.` (only with a logger), later
   `[NF][6]: Failed to load module <r>/<key>: … Remote '<r>' is not initialized.` (`<key>` as passed, usually `./X`);
   `Fetched remote '<a>' does not match requested '<b>'. Omitting expected name.`
-- **Evidence:** Step 4: 404, CORS error or an HTML body (SPA fallback) for that `remoteEntry.json`. Step 6: the
+- **Evidence:** Step 4: 404, CORS error or an HTML body (SPA fallback; `htmlBody: true` in nf-capture's `entries`)
+  for that `remoteEntry.json`. Step 6: the
   name is absent from `remotes`, or present under another name.
 - **Fix direction:** fix the manifest URL, the deployment or CORS. Make the manifest key match `name`.
   `initRemoteEntry('<url>', '<r>')` can load it later in the same page.
@@ -339,8 +386,10 @@ Most common first. Pooling's own failure modes are in [pooling.md](pooling.md), 
   Under a CSP `trusted-types` directive without `nfo`: `Policy "nfo" disallowed`. From the policy's validators:
   `[nf-orchestrator] trusted-types: invalid script URL "<u>"` / `disallowed protocol`.
 - **Evidence:** Step 3 console; Step 4: whether the response was 200 or 404; the page's CSP header.
-- **Fix direction:** rebuild or redeploy so the hashes match; allow `nfo` in `trusted-types`, or pass
-  `trustedTypesPolicyName: false` when the shell owns its own policy.
+- **Fix direction:** rebuild or redeploy so the hashes match; allow `nfo` in `trusted-types`, or turn the policy off:
+  pass `trustedTypesPolicyName: false` to a direct `initFederation` that uses the default import-map functions, or as
+  the second argument of `useShimImportMap(cfg, false)` / `useDefaultImportMap(false)`. The Angular adapters build
+  these functions without the argument, so with them `nfo` must be allowed in the CSP.
 
 ### Static import map replaced: hand-written mappings stop resolving
 - **Mechanism:** `initFederation` removes every `<head>` script of the type it writes (`importmap-shim` in shim mode,
@@ -361,7 +410,9 @@ Most common first. Pooling's own failure modes are in [pooling.md](pooling.md), 
   `version` that differs from the installed package. Step 5: more than one map written at init (maps added later by
   `initRemoteEntry` carry only new keys). Step 3: init logged twice (two `[NF][1]` fetch sequences or two
   `Added import map` lines). Classic next to the orchestrator: `__NATIVE_FEDERATION__` holds both `Map`s and plain
-  records, or classic calls throw `Cannot read properties of undefined (reading 'get')`.
+  records, or, when the orchestrator created the global first, classic `initFederation` throws `Cannot read
+  properties of undefined (reading 'set')` and `loadRemoteModule` `(reading 'get')`/`(reading 'has')` (classic first:
+  nothing throws).
 - **Fix direction:** one orchestrator, one `initFederation` call, in the shell; load later remotes with
   `initRemoteEntry`. A remote that loads other remotes takes the shell's `loadRemoteModule` (passed into its
   bootstrap) instead of calling `initFederation` itself ([angular.md](angular.md)).

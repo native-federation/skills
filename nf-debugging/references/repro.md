@@ -25,8 +25,9 @@ node <skill>/scripts/serve.mjs 4200:dist/host/browser 4201:dist/mfe1/browser &
 - `serve.mjs` sends CORS headers and `Cache-Control: no-store`, and falls back to `index.html` for
   routes without an extension. Kill it when you're done.
 - A dev build with `sse: true` logs `EventSource's response has a MIME type ("text/html")` and
-  `[NF][0]: [SSE] Connection error` on a static server. That's noise. It can also put `…:build-notifications` (`net::ERR_ABORTED`) in
-  `failedRequests`.
+  `[NF][0]: [SSE] Connection error` on a static server. That's noise.
+- The dev build-notification connection shows up in `failedRequests` as an aborted `…:build-notifications`
+  request (`net::ERR_ABORTED`), not a failure.
 - Set `logLevel: 'debug'` in the copy's `initFederation` options before building. Several failures
   are silent at the default level (Step 3).
 
@@ -46,6 +47,7 @@ and prints one JSON report:
 | `console[]` | Every message. For errors and warnings, `args` holds the expanded `NFError` stacks that the console's preview truncates |
 | `pageErrors[]` | Uncaught errors and rejections |
 | `failedRequests[]` | Network failures and status ≥ 400. An SRI block on a 200 response appears only in `console` |
+| `entries[]` | Every `.json` response (manifest, `remoteEntry.json`): `url`, `status`, `contentType`, and `htmlBody` (the body starts with `<`, e.g. an SPA fallback). A remote missing here was not fetched (warm cache) |
 | `importMaps[]` | Every DOM map, plus `importShim.getImportMap()` in shim mode |
 | `runtime` | Output of `detect-runtime.js` |
 | `orchestratorStorage` | Output of `dump-orchestrator-storage.js`: per namespace, the raw `values` and the `verdicts` rows |

@@ -18,7 +18,8 @@ launch mechanics differ per adapter and version, so take them from the live docs
   package that isn't bridged, or was loaded from `node_modules` before the map existed, can exist twice.
 - **Startup-only state:** remotes are fetched once, when the process starts. No persistent cache, no retry, no re-read:
   a remote that was down at boot, or was redeployed since, stays missing or stale until the process restarts.
-- **Logging:** depends on the logger the Node init is given. With none, nothing below `error` is printed.
+- **Logging:** depends on the logger the Node init is given. With none, the orchestrator prints nothing, not even
+  errors; a launcher may print its own lines.
 - **v3:** `@softarc/native-federation-node` did the same with a `node.importmap` written to `process.cwd()`, and
   exact-version dedupe like the classic runtime. Under `ng serve`, v3 renders without federated SSR.
 
@@ -26,7 +27,7 @@ launch mechanics differ per adapter and version, so take them from the live docs
 from one HTML provider into another only adds coupling, so keep all server code in the same server or container. Sharing
 on the server only makes sense for a Node process that acts as a long-running server composing remotes at runtime, or an
 IoT-style device; there the failure modes below apply in full.
-// TODO: server-only sharing config (not supported yet), e.g. `shared: {}` for the server build only.
+<!-- TODO: server-only sharing config (not supported yet), e.g. `shared: {}` for the server build only. -->
 
 ## Reading the evidence
 
@@ -34,12 +35,12 @@ IoT-style device; there the failure modes below apply in full.
    browser: the Node side failed. Markup present, then gone on hydration: a browser problem (the procedure in SKILL.md).
 2. **Logs.** Give the Node init a console logger at `debug` if the setup lets you. Its log then shows every phase and
    the full import map (`Added import map …`), which is the only view of where each specifier resolves on the server.
-   // TODO: no endorsed way to read the server import map yet; maybe a hook tied to `profile.enableDebugging`.
-   // TODO: how agents set the log level for the shipped preload, if the preload gets an option for it.
+   <!-- TODO: no endorsed way to read the server import map yet; maybe a hook tied to `profile.enableDebugging`. -->
+   <!-- TODO: how agents set the log level for the shipped preload, if the preload gets an option for it. -->
 3. **Where a shared singleton resolves.** It must be a federated file (under the shell's browser build or a remote's
    URL), not `node_modules`. A stack frame in `node_modules/<pkg>`, or partial-compilation code (`ɵɵngDeclare`) in a
    loaded file, means the unlinked package was loaded.
-4. **Node version and working directory.** `require()` of ESM needs Node ≥ 22.12. Relative manifest and bundle paths
+4. **Node version and working directory.** `require()` of ESM needs Node ≥ 20.19 (20.x) or ≥ 22.12. Relative manifest and bundle paths
    resolve against `process.cwd()`.
 
 ## Failure modes
@@ -63,17 +64,17 @@ IoT-style device; there the failure modes below apply in full.
   are shared.
 - **Fix direction:** keep server code out of federation where you can (above). Where server-side sharing is intended,
   keep every project on the same framework version.
-  // TODO: is there a rule for `hostInstances` in prod? Unknown for now.
+  <!-- TODO: is there a rule for `hostInstances` in prod? Unknown for now. -->
 
 ### Module format on the server: `does not provide an export named`, `require() of ES Module`
 - **Mechanism:** the loader treats import-map targets as ESM; everything else goes through Node's own format
   detection. If a loader overrides that detection (an older orchestrator loader or another hook), a CommonJS package
-  parsed as ESM loses its named exports; and CommonJS code that `require()`s an ESM-only package fails on Node < 22.12.
+  parsed as ESM loses its named exports; and CommonJS code that `require()`s an ESM-only package fails on Node < 20.19 and on 22.0–22.11.
 - **Symptoms:** `SyntaxError: The requested module 'rxjs' does not provide an export named 'BehaviorSubject'`,
   `ReferenceError: exports is not defined in ES module scope`, `require() of ES Module …/core.mjs not supported`.
 - **Evidence:** the importer in the stack: a federated file (an http(s) or browser-build URL) or a `node_modules` file?
   And whether another `--import`/`module.register` hook is active.
-- **Fix direction:** Node ≥ 22.12; find the CommonJS importer. Server code that isn't federated (above) removes the
+- **Fix direction:** Node 20.19+ or 22.12+; find the CommonJS importer. Server code that isn't federated (above) removes the
   federated side of the mix.
 
 ### Launcher paths: `ENOENT`, or the server exits silently
@@ -88,7 +89,7 @@ IoT-style device; there the failure modes below apply in full.
 If the evidence matches none of these failure modes, suspect a defect: build a reproduction ([repro.md](repro.md))
 and check the repo's issue tracker.
 
-// TODO: unstable, kept out of agent text: the preload's status global and env vars, and whether `@angular/ssr`/`@angular/platform-server` must never be shared.
+<!-- TODO: unstable, kept out of agent text: the preload's status global and env vars, and whether `@angular/ssr`/`@angular/platform-server` must never be shared. -->
 
 ## Angular SSR, in brief
 
@@ -97,8 +98,9 @@ and check the repo's issue tracker.
 - **Dev artefacts under a prod server:** `-dev.js` file names in the `remoteEntry.json` a prod server reads hint that
   it serves a dev build's artefacts; `isDevMode()` on the server confirms dev-mode Angular in production SSR. Rebuild
   before starting the prod server.
-- **Shared bundles built for Node:** `node-*` bundle names in the browser's network tab mean the shared bundles were
-  built for Node. Set `platform: 'browser'` explicitly in the federation config.
+- **Shared bundles built for Node:** `"bundle": "node-shared"` (or a `chunks` key starting with `node-`) in
+  `remoteEntry.json` means the shared bundles were built for Node; without dense chunking, look for Node-only code
+  (`require`, `process`) in the served shared files. Set `platform: 'browser'` explicitly in the federation config.
 - **Direct request to a federated child route returns 404:** Angular's build-time route crawl can't load remotes, so
   their child routes never enter the route manifest. Use `loadComponent` children per exposed component in the shell, and
   `RenderMode.Server` instead of `Prerender` for federated routes.
@@ -106,5 +108,5 @@ and check the repo's issue tracker.
   "@angular/core"`: server-rendered `modulepreload` links resolve before `initFederation` adds the map. The browser rule: no bare
   specifier may resolve before the import map exists, and that includes server-rendered `modulepreload`; a failed
   resolution sticks for the page. Evidence: `modulepreload` links ahead of the map in the served HTML. Make those
-  shell routes eager, or don't preload them. // TODO: confirm shim mode avoids it (es-module-shims only shims
-  `modulepreload-shim`).
+  shell routes eager, or don't preload them. <!-- TODO: confirm shim mode avoids it (es-module-shims only shims
+  `modulepreload-shim`). -->

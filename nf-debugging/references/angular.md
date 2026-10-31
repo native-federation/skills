@@ -4,15 +4,15 @@ Live docs: https://native-federation.com/docs/v4/angular-adapter/runtime.md ·
 https://native-federation.com/docs/v4/angular-adapter/migration-v4.md ·
 https://native-federation.com/docs/v3/llms.txt (v3 adapter). SSR is in [ssr.md](ssr.md).
 
-- Three adapter lines. **v3**: `@angular-architects/native-federation` ≤ 21.x, classic runtime, core 2.x/3.x.
+- Three adapter lines. **v3**: `@angular-architects/native-federation` ≤ 21.x, classic runtime, core 1.x–3.x.
   **v4-bridge**: `@angular-architects/native-federation-v4` 20.4.x (ng20) / 21.x (ng21). **v4**:
-  `@angular-architects/native-federation` 22.x. Both v4 lines run the orchestrator.
+  `@angular-architects/native-federation` ≥ 22. Both v4 lines run the orchestrator.
 - Active support covers the two latest majors; older adapter lines are frozen. If the cause is a defect in a frozen
   line, the fix direction is upgrading.
 - The v4 adapter's `initFederation` wraps the orchestrator with `useShimImportMap({ shimMode: true })` (or
   `useDefaultImportMap()` with `shimMode: false`), the console logger at level `error`, and
   `hostRemoteEntry: './remoteEntry.json'`. Other orchestrator options pass through. To see warnings, raise
-  `logLevel` to `'warn'` or `'debug'` (the Angular 20 bridge differs: [logging](orchestrator.md#turn-on-logging-step-3)).
+  `logLevel` to `'warn'` or `'debug'` (the Angular 20 bridge and adapters ≤ 21.2.7 / ≤ 22.0.5 differ: [logging](orchestrator.md#turn-on-logging-step-3)).
 - Angular DI compares tokens and classes **by object identity**. Two module instances of one file are two tokens. So
   `NG0201`/`NG0203` almost always mean "one file, two copies", not a provider bug.
 - `@angular/core` is a singleton. Whichever build's copy is served decides dev mode, `ngServerMode` and
@@ -26,7 +26,7 @@ https://native-federation.com/docs/v3/llms.txt (v3 adapter). SSR is in [ssr.md](
 
 | Adapter line | core `@softarc/native-federation` | runtime |
 |---|---|---|
-| v3: `@angular-architects/native-federation` ≤ 21 | 2.x–3.x | classic runtime |
+| v3: `@angular-architects/native-federation` ≤ 21 | 1.x–3.x | classic runtime |
 | v4-bridge: `@angular-architects/native-federation-v4` (Angular 20/21) | 4.x | orchestrator |
 | v4: `@angular-architects/native-federation` ≥ 22 | 4.x | orchestrator |
 
@@ -127,8 +127,8 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
     `polyfills.js` before `Unable to resolve specifier`.
 - **Evidence:** the served `index.html` (`esms-options`, main tag `type`) and the map tag in the live DOM; for
   rewrite side effects, the served source at the error position.
-- **Applies to:** on the v4-bridge, es-module-shims always runs in shim mode; native mode needs adapter 22.1+ (build)
-  and a browser that supports multiple import maps. v3 is shim-only.
+- **Applies to:** on the v4-bridge, es-module-shims always runs in shim mode; native mode needs adapter 22.0.3+ (build option and
+  runtime `shimMode`) and a browser that supports multiple import maps. v3 is shim-only.
 - **Fix direction:** make all three markers agree; use native mode when the shim's rewrite breaks code.
 
 ### Dev-server serving model: 404, `text/html` or stale code in `ng serve`
@@ -156,7 +156,8 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
   (common under Nx, which loads `@angular/build` first).
 - **Evidence:** the optimizer fingerprint in `dist`; `NG_BUILD_OPTIMIZE_CHUNKS` in the build environment; rebuild
   with `NG_BUILD_OPTIMIZE_CHUNKS=0`.
-- **Applies to:** v4 on Angular 22. The v3 adapter never sets it.
+- **Applies to:** v4 on Angular 22 (default on); Angular 20/21 only with `NG_BUILD_OPTIMIZE_CHUNKS=1`. The v3 adapter
+  never sets it.
 - **Fix direction:** turn the optimizer off (unset `NG_BUILD_OPTIMIZE_CHUNKS`, or set it to `0`).
 
 ### Mixed dev and prod builds: `ReferenceError: ngDevMode is not defined`
@@ -186,15 +187,16 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
   replaces the shell's import map.
 
 ### Locale data Angular injects: `Failed to resolve module specifier "@angular/common/locales/global/<code>"`
-- **Mechanism:** with `i18n.sourceLocale` set (not en-US), Angular's `localize` injects an import of
-  `@angular/common/locales/global/<code>` into `polyfills.js`, outside the micro frontend. `@angular/common` is
+- **Mechanism:** with `i18n.sourceLocale` set (not en-US) and translations not inlined (no `localize`,
+  e.g. `ng serve`), Angular's application builder adds an import of `@angular/common/locales/global/<code>` to
+  `polyfills.js`, outside the micro frontend. `@angular/common` is
   external, so the import stays bare, and the unused-deps scan never sees it: locale data that Angular injects has to
   be shared and mapped like any other entry point.
 - **Symptoms:** `Failed to resolve module specifier "@angular/common/locales/global/de-CH"…` (Chrome) / `…was a bare
-  specifier, but was not remapped to anything` (Firefox), often only in `ng serve` or a localized build.
+  specifier, but was not remapped to anything` (Firefox), often only in `ng serve` or a build without `localize`.
 - **Evidence:** Step 5: the specifier is absent; the importer is `polyfills.js` or `main.js`.
 - **Fix direction:** if the adapter doesn't map it, share it explicitly (`shareAngularLocales(['global/<code>'])`).
-  // TODO: update once locale mapping ships in the v4 adapter (v3 21.2.4+ already maps it).
+  <!-- TODO: update once locale mapping ships in the v4 adapter (v3 21.2.4+ already maps it). -->
 
 Failure modes with their home elsewhere:
 - A shared package's secondary pruned from one build (`rxjs-interop`, Material internals, `Unable to resolve specifier

@@ -59,7 +59,7 @@ Pooling is only ever explicit: no `pool` label, no pooling.
 
 Labels come only from the remote entry: check the `shared` rows for `pool` and don't assume any adapter or core
 default. A `pool` set in the federation config but missing from `remoteEntry.json` means the build predates
-pass-through (core 4.3, v4-bridge 21.2.7, 22.0.5).
+pass-through (core 4.3; 4.3.2 with `denseExternals`; v4-bridge 21.2.7, 22.0.5).
 
 ## The election (init)
 

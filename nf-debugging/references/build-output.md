@@ -26,7 +26,7 @@ Fetch each participant's `remoteEntry.json` directly (Steps 4 and 7).
 | Only `name`, `exposes`, `shared` (each row has `outFileName`), optional `buildNotificationsEndpoint` | v3 core (2.x–3.x), or v4 < 4.3.1 with default features |
 | `@nf-internal/chunk-*` rows in `shared` (`version`/`requiredVersion` `"0.0.0"`) | Chunks published flat: v3 ≥ adapter 20.0.7, or v4 without `denseChunking` |
 | `entries` / `bundle` + top-level `chunks` / `integrity` | `denseExternals` / `denseChunking` / `integrityHashes` is on |
-| `outFileName` ending in `-dev.js`, `exposes[].dev.entryPoint`, `buildNotificationsEndpoint` | A hint of a dev build (`ng serve` or `dev: true`), not proof. For the Angular mode itself, `typeof ngDevMode` decides; the two can differ. // TODO: prefer the remoteEntry "dev" stamp once core adds it |
+| `outFileName` ending in `-dev.js`, `exposes[].dev.entryPoint`, `buildNotificationsEndpoint` | A hint of a dev build (`ng serve` or `dev: true`), not proof. For the Angular mode itself, `typeof ngDevMode` decides; the two can differ. <!-- TODO: prefer the remoteEntry "dev" stamp once core adds it --> |
 
 **Shape (v4)**
 
