@@ -27,7 +27,6 @@ launch mechanics differ per adapter and version, so take them from the live docs
 from one HTML provider into another only adds coupling, so keep all server code in the same server or container. Sharing
 on the server only makes sense for a Node process that acts as a long-running server composing remotes at runtime, or an
 IoT-style device; there the failure modes below apply in full.
-<!-- TODO: server-only sharing config (not supported yet), e.g. `shared: {}` for the server build only. -->
 
 ## Reading the evidence
 
@@ -35,8 +34,6 @@ IoT-style device; there the failure modes below apply in full.
    browser: the Node side failed. Markup present, then gone on hydration: a browser problem (the procedure in SKILL.md).
 2. **Logs.** Give the Node init a console logger at `debug` if the setup lets you. Its log then shows every phase and
    the full import map (`Added import map …`), which is the only view of where each specifier resolves on the server.
-   <!-- TODO: no endorsed way to read the server import map yet; maybe a hook tied to `profile.enableDebugging`. -->
-   <!-- TODO: how agents set the log level for the shipped preload, if the preload gets an option for it. -->
 3. **Where a shared singleton resolves.** It must be a federated file (under the shell's browser build or a remote's
    URL), not `node_modules`. A stack frame in `node_modules/<pkg>`, or partial-compilation code (`ɵɵngDeclare`) in a
    loaded file, means the unlinked package was loaded.
@@ -64,7 +61,6 @@ IoT-style device; there the failure modes below apply in full.
   are shared.
 - **Fix direction:** keep server code out of federation where you can (above). Where server-side sharing is intended,
   keep every project on the same framework version.
-  <!-- TODO: is there a rule for `hostInstances` in prod? Unknown for now. -->
 
 ### Module format on the server: `does not provide an export named`, `require() of ES Module`
 - **Mechanism:** the loader treats import-map targets as ESM; everything else goes through Node's own format
@@ -89,8 +85,6 @@ IoT-style device; there the failure modes below apply in full.
 If the evidence matches none of these failure modes, suspect a defect: build a reproduction ([repro.md](repro.md))
 and check the repo's issue tracker.
 
-<!-- TODO: unstable, kept out of agent text: the preload's status global and env vars, and whether `@angular/ssr`/`@angular/platform-server` must never be shared. -->
-
 ## Angular SSR, in brief
 
 - **Launch:** v4 starts the Node side through the adapter's preload (`node --import …/node-preload
@@ -108,5 +102,4 @@ and check the repo's issue tracker.
   "@angular/core"`: server-rendered `modulepreload` links resolve before `initFederation` adds the map. The browser rule: no bare
   specifier may resolve before the import map exists, and that includes server-rendered `modulepreload`; a failed
   resolution sticks for the page. Evidence: `modulepreload` links ahead of the map in the served HTML. Make those
-  shell routes eager, or don't preload them. <!-- TODO: confirm shim mode avoids it (es-module-shims only shims
-  `modulepreload-shim`). -->
+  shell routes eager, or don't preload them.

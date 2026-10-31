@@ -4,7 +4,7 @@ description: Finds the cause of a Native Federation micro-frontend failure at ru
 license: MIT
 metadata:
   author: Copyright 2026 The native-federation team
-  version: '1.0'
+  version: '0.1'
 ---
 
 # Debugging Native Federation

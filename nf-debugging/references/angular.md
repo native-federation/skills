@@ -196,7 +196,6 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
   specifier, but was not remapped to anything` (Firefox), often only in `ng serve` or a build without `localize`.
 - **Evidence:** Step 5: the specifier is absent; the importer is `polyfills.js` or `main.js`.
 - **Fix direction:** if the adapter doesn't map it, share it explicitly (`shareAngularLocales(['global/<code>'])`).
-  <!-- TODO: update once locale mapping ships in the v4 adapter (v3 21.2.4+ already maps it). -->
 
 Failure modes with their home elsewhere:
 - A shared package's secondary pruned from one build (`rxjs-interop`, Material internals, `Unable to resolve specifier

@@ -135,8 +135,6 @@ globalThis.__NF_ORCHESTRATOR__ = { storage: { // one entry per storageNamespace
   changes the manifest URL). The dump lists them under `values` too. Read them: a per-browser flag explains
   "works on my machine".
 - `exposeStorageGetter: false` (4.7+) removes only `get`.
-  <!-- TODO: if https://github.com/native-federation/orchestrator/issues/131 makes the descriptor opt-in
-  (`profile.enableDebugging`), tell agents to ask the shell to enable it. -->
 
 Run [scripts/dump-orchestrator-storage.js](../scripts/dump-orchestrator-storage.js). Next to the raw values it
 returns `verdicts`, one row per shared copy, flattened from `shared-externals`.
@@ -242,7 +240,6 @@ verbatim; `<…>` marks shortened parts.
 
 `@nf-internal/chunk-*` mapped under two origins is expected when a remote is scoped; `nf-capture` leaves it out
 of `sharedLoads.duplicates`.
-<!-- TODO: verify the classic runtime (v3) equivalents on a running v3 app; only its source was read. -->
 
 ## DevTools extension
 
