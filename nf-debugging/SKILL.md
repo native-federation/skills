@@ -29,6 +29,19 @@ https://native-federation.com/docs/v3/llms.txt (v3). Every page is also availabl
 6. Classify every finding on two axes: the NF line of each participant (v3 / v4 / v4-bridge on
    Angular 20–21) and where it happens (orchestrator / classic runtime / build output / Angular).
 
+## What Native Federation is for, and what it isn't
+
+Micro frontends mean code duplication. Native Federation is damage control: sharing dependencies minimizes that
+duplication. It is **not** a way to share state. Every remote, and the shell, must work on the assumption that it
+shares no code, and therefore no instances, with any other app. Communication between remotes and the shell goes
+through an event bus (for example DOM `CustomEvent`s or the orchestrator's event registry), not through a shared
+store, service or singleton.
+
+So when the cause is state that one app expected to reach through a shared package (a store, a root service, a
+module-level variable) and found missing or duplicated, the **first** fix direction is always to decouple the apps:
+move the exchange to events. Making the instance shared (aligning versions, `singleton`, pooling) comes second, and
+only to save bytes, never so that state can flow through it.
+
 ## Access level decides who runs the steps
 
 | You have | Do this |
@@ -174,7 +187,9 @@ Hand back the diagnosis in this shape, so nf-development (or the user) can act o
 - **Evidence:** the artifact that proves it (import-map entry, storage verdict row, entry diff, console line),
   quoted.
 - **Ruled out:** what the steps eliminated.
-- **Fix direction:** the reference's fix direction. To apply it, use the nf-development skill.
+- **Fix direction:** the reference's fix direction. If the failure involves state crossing app boundaries, lead with
+  decoupling through an event bus ([why](#what-native-federation-is-for-and-what-it-isnt)). To apply it, use the
+  nf-development skill.
 
 If no failure mode matches, say so and give the reproduction (Step 9) instead of a guess.
 
@@ -187,6 +202,7 @@ the evidence and the fix direction, per version line where behaviour differs by 
 |---|---|---|---|
 | `Failed to resolve module specifier "x"` / `Unable to resolve specifier 'x' imported from …` | **Unmapped specifier**: `x` is in no build's `shared` | 5 → 7 | [build-output.md](references/build-output.md#declaration-a-sub-path-or-entry-point-isnt-declared) |
 | A feature silently does nothing (e.g. Angular animations), no error | **Unmapped specifier** behind a swallowed dynamic `import()` | 5 → 7 | [build-output.md](references/build-output.md#pruning-ignoreunuseddeps-an-entry-point-the-app-doesnt-import-isnt-published) |
+| A store, service or variable that one app sets is empty or different in another app | **State shared through code**: not supported by design. Decouple via an event bus first ([why](#what-native-federation-is-for-and-what-it-isnt)) | 1 | — |
 | `NG0203`, `NG0201`/`NullInjectorError`, a root service created twice, "Invalid hook call", `instanceof` failing | **Scoped copy** (second instance by design); classic: **exact-version sharing** | 5 → 6 | [orchestrator.md](references/orchestrator.md#scoped-copy-a-framework-or-library-runs-twice-no-warning), [classic-runtime.md](references/classic-runtime.md#exact-version-sharing-a-shared-package-runs-twice-ng0203-nullinjector-services-not-singleton) |
 | Same, and the duplicate is a workspace library or a component class | **Inlined and federated**: bundled into a chunk *and* shared | 5 → 7 | [angular.md](references/angular.md#workspace-lib-both-inlined-and-federated-ng0201-a-root-service-created-twice), [build-output.md](references/build-output.md#not-shared-skip-the-dependency-list-and-mappings-produce-a-bundled-copy) |
 | `NG0203` only once a secondary entry point (`toSignal()`/`rxjs-interop`) runs | **Entry-point coverage**: the serving build lacks the secondary | 5 → 6 → 7 | [orchestrator.md](references/orchestrator.md#missing-entry-point-in-the-serving-build-ng0203-once-tosignal--rxjs-interop-runs), [build-output.md](references/build-output.md#pruning-ignoreunuseddeps-an-entry-point-the-app-doesnt-import-isnt-published) |
