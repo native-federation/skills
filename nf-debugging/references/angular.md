@@ -111,8 +111,10 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
   exposed components (ShadowDom encapsulation avoids leaks).
 
 ### Shim vs native mode: modules fail before or while loading
-- **Mechanism:** es-module-shims decides its mode once, at load: shim mode if `esmsInitOptions.shimMode` is set or
-  any `module-shim`/`importmap-shim` tag exists. In shim mode it reads only `importmap-shim` and runs `module-shim`
+- **Mechanism:** es-module-shims decides its mode once, at load: shim mode if `shimMode` is set (in the
+  `<script type="esms-options">` JSON or the `esmsInitOptions` global) or any `module-shim`/`importmap-shim`/
+  `modulepreload-shim` tag exists. Loading es-module-shims doesn't by itself mean shim mode, and this applies to any
+  orchestrator shell, not only Angular. In shim mode it reads only `importmap-shim` and runs `module-shim`
   scripts, rewriting every module's `import(` to `importShim(`. Native mode needs the three markers to agree: the
   build's `esms-options` JSON, the main tag's `type`, and the map tag the orchestrator writes (runtime
   `initFederation({ shimMode })`).
@@ -125,7 +127,10 @@ Core and orchestrator are ranges, so always read the installed versions (`npm ls
     method named `import`, e.g. DevExtreme); breakpoints or `debugger` lines that don't match the
     source (shim mode runs rewritten code); strict CSP (`script-src 'self'`) errors from
     `polyfills.js` before `Unable to resolve specifier`.
-- **Evidence:** the served `index.html` (`esms-options`, main tag `type`) and the map tag in the live DOM; for
+- **Evidence:** [dump-import-map.js](../scripts/dump-import-map.js) marks the `effective` map and warns when shim
+  mode meets native maps (then `importShim()`, `importShim.resolve` and any loader built on them fail while `import()`
+  works); the served
+  `index.html` (`esms-options`, main tag `type`) and the map tag in the live DOM; for
   rewrite side effects, the served source at the error position.
 - **Applies to:** on the v4-bridge, es-module-shims always runs in shim mode; native mode needs adapter 22.0.3+ (build option and
   runtime `shimMode`) and a browser that supports multiple import maps. v3 is shim-only.
