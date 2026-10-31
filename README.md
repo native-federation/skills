@@ -7,6 +7,10 @@ needs for one kind of task, so it can help with a federated app without guessing
 
 ## Available Skills
 
+- **[`nf-development`](nf-development/)**: terminology, configuration, dependency sharing and architecture for
+  Native Federation. Use it to set up, configure, optimize or migrate a federated app: shell and remotes,
+  `federation.config.mjs`, shared dependencies and mappings, the orchestrator, Angular or React integration, and
+  v3 → v4 migration. It also applies the fix once `nf-debugging` has found the cause.
 - **[`nf-debugging`](nf-debugging/)**: finds the cause of a Native Federation failure at runtime, in the browser or
   during SSR, for Native Federation v3 and v4. For example: `Failed to resolve module specifier`, a remote or
   `remoteEntry.json` that won't load, a framework running twice (NG0203, "Invalid hook call"), version or pooling
