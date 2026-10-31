@@ -1,6 +1,6 @@
 ---
 name: nf-debugging
-description: Finds the cause of a Native Federation micro-frontend failure at runtime (ESM + import maps; `@softarc/native-federation*`, `@angular-architects/native-federation*`), in the browser or during SSR. Use whenever a federated shell or remote fails: "Failed to resolve module specifier" / "Unable to resolve specifier", a remote or `remoteEntry.json` that won't load, initFederation / loadRemoteModule / initRemoteEntry errors, a framework running twice (NG0203, injector errors, "Invalid hook call"), version or pooling warnings, or a deploy that doesn't show up. Trigger on a pasted console error alone when the project uses Native Federation. Not for webpack Module Federation, build-time errors, or writing the fix (nf-development).
+description: Finds the cause of a Native Federation micro-frontend failure at runtime (ESM + import maps; `@softarc/native-federation*`, `@angular-architects/native-federation*`), in the browser or during SSR, on Native Federation v3 and v4. Use whenever a federated shell or remote fails: "Failed to resolve module specifier" / "Unable to resolve specifier", a remote or `remoteEntry.json` that won't load, initFederation / loadRemoteModule / initRemoteEntry errors, a framework running twice (NG0203, injector errors, "Invalid hook call"), version or pooling warnings, or a deploy that doesn't show up. Trigger on a pasted console error alone when the project uses Native Federation. Not for webpack Module Federation, build-time errors, or writing the fix (nf-development).
 license: MIT
 metadata:
   author: Copyright 2026 The native-federation team
@@ -9,7 +9,9 @@ metadata:
 
 # Debugging Native Federation
 
-This skill finds the cause. The fix belongs to **nf-development**. For version-specific API
+This skill covers Native Federation **v3 and v4**: the orchestrator and the deprecated classic runtime, and the
+Angular adapter lines (v3, the v4-bridge `@angular-architects/native-federation-v4` and v4). It finds the cause; the
+fix belongs to **nf-development**. For version-specific API
 details, fetch the live docs: https://native-federation.com/llms.txt (v4) or
 https://native-federation.com/docs/v3/llms.txt (v3). Every page is also available as `.md`.
 
