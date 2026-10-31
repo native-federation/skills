@@ -26,7 +26,7 @@ Fetch each participant's `remoteEntry.json` directly (Steps 4 and 7).
 | Only `name`, `exposes`, `shared` (each row has `outFileName`), optional `buildNotificationsEndpoint` | v3 core (2.x–3.x), or v4 < 4.3.1 with default features |
 | `@nf-internal/chunk-*` rows in `shared` (`version`/`requiredVersion` `"0.0.0"`) | Chunks published flat: v3 ≥ adapter 20.0.7, or v4 without `denseChunking` |
 | `entries` / `bundle` + top-level `chunks` / `integrity` | `denseExternals` / `denseChunking` / `integrityHashes` is on |
-| `outFileName` ending in `-dev.js`, `exposes[].dev.entryPoint`, `buildNotificationsEndpoint` | A dev build (`ng serve` or `dev: true`) |
+| `outFileName` ending in `-dev.js`, `exposes[].dev.entryPoint`, `buildNotificationsEndpoint` | A hint of a dev build (`ng serve` or `dev: true`), not proof. For the Angular mode itself, `typeof ngDevMode` decides; the two can differ. // TODO: prefer the remoteEntry "dev" stamp once core adds it |
 
 **Shape (v4)**
 
@@ -42,8 +42,8 @@ SharedInfo      = { packageName, outFileName, version, requiredVersion, singleto
 DenseSharedInfo = SharedInfo without outFileName, plus entries: { <specifier>: <file> }   // features.denseExternals
 ```
 
-Core defaults: `ignoreUnusedDeps: true`, `synthesizeCjsExports: true`, everything else off. The Angular `ng add`
-template turns on `denseChunking` and `denseExternals`. Each flag is per build, so one page can mix flat and dense
+Core defaults: `ignoreUnusedDeps`, `mappingVersion` and `synthesizeCjsExports` on; `denseChunking`, `denseExternals`,
+`integrityHashes` and `strictImports` off; `chunks: true`. The Angular `ng add` template may turn on `denseChunking` and `denseExternals`. Each flag is per build, so one page can mix flat and dense
 entries. Chunk bundle names: `browser-shared`/`node-shared` (shared externals), `browser-<pkg>` (`build: 'package'`),
 `mapping-bundle` or `mapping-<name>` (shared mappings, core ≥ 4.7), `mapping-or-exposed` (exposes; mappings too
 before 4.7).
@@ -58,12 +58,13 @@ before 4.7).
 | Why two copies of a package? | Across participants: `version` (the *installed* version), `requiredVersion`, `singleton`, `strictVersion`, `shareScope`, `pool`, which entry points each side declares, and dense vs flat. Within one entry, every specifier of a package must carry the same `version`. |
 | Stale code? | `version` vs the installed version (`npm ls <pkg>`), and whether `outFileName`'s hash changed. |
 | SRI block? | `integrity[<file>]` vs the served file. |
-| Dev reload trouble? | `buildNotificationsEndpoint` (see [orchestrator.md](orchestrator.md) / [classic-runtime.md](classic-runtime.md)). |
 
-**Build-log evidence.** When you can't rebuild yourself, ask for the log. For more detail, set `"verbose": true` on the
-`esbuild` target in `angular.json`.
+**Build-log evidence.** Ask for the build log first, from the build that produced the failing `remoteEntry.json`. In a
+polyrepo that build may belong to another repo or team: ask its owners. Suggest `features.strictImports: true` (core ≥ 4.8;
+older core ignores the key) while debugging, and
+`"verbose": true` on the `esbuild` target in `angular.json` for more detail.
 - `'<x>' will not resolve (imported by <files>). <reason>` (core ≥ 4.8): predicts the runtime error exactly.
-  It scans only federation-built files (shared, mappings, exposes), not Angular's `main`/`polyfills`.
+  It checks only what the federation build emits; the app's own bundles can still fail.
   `features.strictImports: true` turns it into a build failure.
 - `Checksum of <bundle> matched, re-using cached externals.`: the shared bundles came from the externals cache.
   `Cached <bundle> externals are stale (<reason>), rebuilding.`: the cache noticed a change.
@@ -72,7 +73,7 @@ before 4.7).
 - `Sharing mapped paths with wildcards (*) needs either the ignoreUnusedDeps feature or 'includeSecondaries: { resolveGlob: true }'. Dropped: <keys>.`
 - `No shared mapping is reachable from the entry points, so remoteEntry.json will ship without this workspace's libraries.`
 - `'<importer>' imports '<x/sub>', a subpath of the shared mapping '<x>'. … the import map cannot resolve it.`
-- Angular adapter (bridge 21.2.16+, 22.2.3+): `Shared externals are published flat. Since orchestrator 4.8.0 …` and
+- Angular adapter (recent versions): `Shared externals are published flat. Since orchestrator 4.8.0 …` and
   `@angular/<x> … shared without 'includeSecondaries: { keepAll: true }' … Remotes that import others load their own Angular instead.`
 
 **Diff two states** of the same entry to localise a cause: cold vs warm externals cache, before vs after a watch
@@ -80,15 +81,20 @@ rebuild, dev vs prod.
 
 **A/B levers and their traps:** `features.ignoreUnusedDeps: false` (wildcard `sharedMappings` then vanish unless
 `includeSecondaries: { resolveGlob: true }` is also set), `includeSecondaries: { keepAll: true }` on one package,
-`features.strictImports: true`, purging `node_modules/.cache/native-federation` (and `.angular`).
+`features.strictImports: true`, purging the build caches ([Build caches](#build-caches-stale-output-files)).
 
-**Probe one specifier in the page.** In shim mode, `importShim.resolve('<x>')` resolves without fetching and throws
-the es-module-shims wording when `<x>` isn't mapped. `importShim('<x>')` also loads it. Without the shim, use `import('<x>')`.
+**Probe one specifier in the page.** Default to `import('<x>')`; it can't take an importer and executes the module. If
+es-module-shims is loaded, check its mode first (`esmsInitOptions.shimMode`, the `<script type="esms-options">` JSON, or
+any `importmap-shim`/`module-shim` tag): in shim mode only the shim sees the map, so use
+`importShim.resolve('<x>', '<importer URL>')`. It resolves without fetching and throws the es-module-shims wording when
+`<x>` isn't mapped. Pass the URL of the file that fails to import `<x>` (from the error's "imported from"): remotes
+resolve through their own scope, and without it you only test the top-level `imports`. A shell can supply its own
+importer or resolve hook, so this covers most setups, not all.
 
 ## Failure modes
 
 Angular-only causes are in [angular.md](angular.md): compiler-generated relative imports into a shared mapping, locale
-data, the `index.html` rewrite and shim mode, and the chunk optimizer. How the runtime picks a serving build is in
+data, shim mode, and the chunk optimizer. How the runtime picks a serving build is in
 [orchestrator.md](orchestrator.md) and [pooling.md](pooling.md).
 
 ### Declaration: a sub-path or entry point isn't declared
@@ -117,13 +123,13 @@ data, the `index.html` rewrite and shim mode, and the chunk optimizer. How the r
 - **Symptoms:**
   - The build's own bundle imports a pruned entry point: the "not declared" errors above, sometimes **silent** (a
     framework that catches a failed lazy `import()`, e.g. Angular animations that just don't apply).
-  - A host that lacks an entry point a remote imports (typical: `@angular/core/rxjs-interop`): orchestrator ≥ 4.8
+  - A shell that lacks an entry point a remote imports (typical: `@angular/core/rxjs-interop`): orchestrator ≥ 4.8
     runs the remote's whole package from the remote's own build. That means a second framework instance for that
     remote, and it's silent unless the package is pooled (`[NF][3] … serves its own family … (gap '<entry>')`).
-    Orchestrator ≤ 4.7 mixes the host's core with the remote's secondary instead: `NG0203: toSignal() can only be used
+    Orchestrator ≤ 4.7 mixes the shell's core with the remote's secondary instead: `NG0203: toSignal() can only be used
     within an injection context` appears only once that code runs.
-  - A host meant to provide every workspace lib advertises almost none of them.
-- **Evidence:** Step 7: put host and remote `shared`/`entries` keys for one package side by side and look for an entry
+  - A shell meant to provide every workspace lib advertises almost none of them.
+- **Evidence:** Step 7: put shell and remote `shared`/`entries` keys for one package side by side and look for an entry
   point only one side declares. Step 5/6: which build serves the package for that remote (`scopes`, verdict
   `poolCause: 'uncovered'`). Confirm by rebuilding with `keepAll` on that package, or with `ignoreUnusedDeps: false`
   (plus `resolveGlob: true` if you use wildcard mappings).
@@ -131,9 +137,11 @@ data, the `index.html` rewrite and shim mode, and the chunk optimizer. How the r
   serving-build behaviour differs by orchestrator version as above. On the classic runtime the mismatch shows up as two
   copies keyed by version ([classic-runtime.md](classic-runtime.md)).
 - **Fix direction:** `includeSecondaries: { keepAll: true }` on framework packages in every build (the v4 Angular
-  template does this for `@angular/*`), or import the entry point where it's provided. For a provider host, let each
-  remote publish what it imports. An app with `exposes` is a remote; a host never exposes. If one app both hosts and
-  exposes, that is the problem: split the exposed part into its own remote.
+  template does this for `@angular/*`), or import the entry point where it's provided. For a provider shell, let each
+  remote publish what it imports. The shell is the only app that calls `initFederation`, and it has no `exposes`; an
+  app with `exposes` is a remote, even if it loads other remotes. An app that calls `initFederation` and has `exposes`
+  is the problem: its own `main.ts` isn't scanned, so what only that app imports isn't shared. Split the exposed part
+  into its own remote.
 
 ### Not shared: `skip`, the dependency list and mappings produce a bundled copy
 - **Mechanism:** whatever isn't declared as shared is bundled into each build that imports it, so it runs once per
@@ -188,7 +196,7 @@ data, the `index.html` rewrite and shim mode, and the chunk optimizer. How the r
   deeper declared packages honoured from orchestrator 4.9 with `denseExternals` on; flat entries keep the
   `@scope/name` rule.
 - **Fix direction:** keep identity (tokens, services) in a library's entry point, not behind a lazy `import()`. Turn on
-  `denseExternals` (the Angular adapter warns when it's off), declare packages with `.package(prefix)`, and couple
+  `denseExternals`, declare packages with `.package(prefix)`, and couple
   dependent packages with a `pool`.
 
 ### CommonJS interop: named exports missing, or `require` at runtime
@@ -201,43 +209,36 @@ data, the `index.html` rewrite and shim mode, and the chunk optimizer. How the r
   (`x.default.fn`). `Error: Dynamic require of "<x>" is not supported`. In the build log:
   `Could not enumerate named exports of "<entry>" …`.
 - **Evidence:** Step 3: map the `blob:` module to its package through the stack frame. The package has no ESM `module`
-  or `exports` entry. The 4.8 bare-import check doesn't catch `require()`.
+  or `exports` entry. If the build's bare-import check is silent, don't rule out a runtime `require()`.
 - **Applies to:** all lines. Named-export recovery is v4 ≥ 4.3.2 only.
 - **Fix direction:** use the default import, a per-function entry point or an ESM variant of the package. Or `skip` it,
-  or point `packageInfo` at its ESM file. Purge the externals cache afterwards.
+  or point `packageInfo` at its ESM file, then purge the build caches.
 
-### Externals cache: a stale shared bundle
+### Build caches: stale output files
 - **Mechanism:** shared bundles are cached in `node_modules/.cache/native-federation/<project>/` and reused when a
-  checksum matches. In v4 the cache is on by default (builder option `cacheExternalArtifacts`, alias `cache`;
-  `cachePath` moves it). The checksum covers the installed versions, share metadata, `dev`, `features`, and the adapter
-  and bundler settings. It never covers edits inside an installed package (`patch-package`, a hand-edited
-  `node_modules` file) or custom esbuild plugins. v3 caches only when enabled, and keys only on `pkg@version`.
-- **Symptoms:** old behaviour or a missing export from a shared package right after changing it, only on machines
-  with a warm cache. CI is usually fine because a clean install wipes `node_modules/.cache`.
-- **Evidence:** build log `Checksum of <bundle> matched, re-using cached externals.` right after the change. Step 7:
-  `version` ≠ installed. Deleting the cache folder and rebuilding fixes it.
-- **Fix direction:** purge the cache after patching packages or changing anything the checksum can't see.
+  checksum matches (builder option `cacheExternalArtifacts`, alias `cache`; `cachePath` moves it). Angular keeps its own
+  cache in `.angular/cache`. A cache key can't see every input, so a build can reuse output that no longer matches the
+  sources.
+- **Symptoms:** a change (to a dependency, a shared lib, an exposed component, or the federation config) that doesn't show
+  up in the served files, only on machines with a warm cache. CI is usually fine because it starts from a clean checkout.
+- **Evidence:** build log `Checksum of <bundle> matched, re-using cached externals.` right after the change. The served
+  file's hash in `remoteEntry.json` didn't change. Purging the caches and rebuilding fixes it.
+- **Fix direction:** whenever stale output is a suspect, purge the build caches (`node_modules/.cache/native-federation`,
+  `.angular/cache`, `dist`) and rebuild before digging further.
 
 ### Dev and prod builds: different output, and mixing them
-- **Mechanism:** a dev build doesn't hash file names, builds shared packages in dev mode (`-dev.js`), adds
+- **Mechanism:** a dev build names shared entries by build metadata, not content (`<name>.<hash>-dev.js`), leaves
+  exposes and mappings unhashed, builds shared packages in dev mode, adds
   `dev.entryPoint` and `buildNotificationsEndpoint`, and is cached separately. Prod hashes every shared entry by its
   final content. The runtime serves each shared package from **one** build. If participants mix dev and prod builds,
   code compiled for one mode can run against the other mode's framework build. In dev, a statically served remote's copy of a
   library can win over the dev-served one ([orchestrator.md](orchestrator.md#serving-build-choice-in-dev-the-static-builds-copy-wins-over-the-dev-served-one)).
 - **Symptoms:** works in dev, fails in prod (or the other way round). Angular `ReferenceError: ngDevMode is not
-  defined` ([angular.md](angular.md)). In dev, stale library code although the dev server rebuilt. After a v3 deploy, a
-  cached shared entry asks for a chunk that no longer exists (v3 names didn't change with chunk imports).
+  defined` ([angular.md](angular.md)). In dev, stale library code although the dev server rebuilt.
 - **Evidence:** the dev fingerprints in the table above, per participant. Step 4: which origin each shared
   package's file came from. Diff the dev and prod entries of the same app.
 - **Fix direction:** serve all participants in the same mode while debugging. Make sure deployed remotes are prod
-  builds. Send `no-cache` for `remoteEntry.json` (and on v3 for shared entries).
+  builds. Send `no-cache` for `remoteEntry.json` .
 
 If the evidence matches none of these failure modes, suspect a defect: build a reproduction ([repro.md](repro.md)) and
 check the repo's issue tracker.
-
-## Questions for the maintainer
-
-1. Should the skill tell agents to ask for the build log first, and to recommend `features.strictImports: true` while debugging?
-2. Is `importShim.resolve('<x>')` / `import('<x>')` the endorsed console probe in shim and native mode?
-3. Should cache hits be invalidated by patched `node_modules` content (patch-package), or is "purge the cache" the answer?
-4. Would you add build provenance (adapter/core version, dev or prod) to `remoteEntry.json`? Today only `$version` exists, so dev-vs-prod mixing is inferred from file names.

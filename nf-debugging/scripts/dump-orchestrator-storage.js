@@ -16,7 +16,7 @@
     if (stores[type]) return parse(stores[type].getItem(`${namespace}.${key}`));
     return '<custom storage: not readable without get()>';
   };
-  // Hosts may keep their own keys under the namespace (feature flags, settings), so list those too.
+  // The shell may keep its own keys under the namespace (feature flags, settings), so list those too.
   const keysIn = (type, namespace) => {
     if (type === 'globalThis') return Object.keys(globalThis[namespace] ?? {});
     if (!stores[type]) return [];
@@ -48,7 +48,7 @@
       result[namespace] = { source: '__NF_ORCHESTRATOR__', version: d.version, type: d.type, values };
     }
   } else {
-    // Orchestrator < 4.7 publishes no descriptor, so probe the default namespace in every built-in storage.
+    // No descriptor (orchestrator < 4.7, or the shell disabled it): probe the default namespace in every built-in storage.
     const namespace = '__NATIVE_FEDERATION__';
     for (const type of ['globalThis', 'localStorage', 'sessionStorage']) {
       const keys = new Set([...KEYS, ...keysIn(type, namespace)]);

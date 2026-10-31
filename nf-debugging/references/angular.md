@@ -7,14 +7,16 @@ https://native-federation.com/docs/v3/llms.txt (v3 adapter). SSR is in [ssr.md](
 - Three adapter lines. **v3**: `@angular-architects/native-federation` ≤ 21.x, classic runtime, core 2.x/3.x.
   **v4-bridge**: `@angular-architects/native-federation-v4` 20.4.x (ng20) / 21.x (ng21). **v4**:
   `@angular-architects/native-federation` 22.x. Both v4 lines run the orchestrator.
+- Active support covers the two latest majors; older adapter lines are frozen. If the cause is a defect in a frozen
+  line, the fix direction is upgrading.
 - The v4 adapter's `initFederation` wraps the orchestrator with `useShimImportMap({ shimMode: true })` (or
   `useDefaultImportMap()` with `shimMode: false`), the console logger at level `error`, and
   `hostRemoteEntry: './remoteEntry.json'`. Other orchestrator options pass through. To see warnings, raise
-  `logLevel` to `'warn'` or `'debug'`.
+  `logLevel` to `'warn'` or `'debug'` (the Angular 20 bridge differs: [logging](orchestrator.md#turn-on-logging-step-3)).
 - Angular DI compares tokens and classes **by object identity**. Two module instances of one file are two tokens. So
   `NG0201`/`NG0203` almost always mean "one file, two copies", not a provider bug.
 - `@angular/core` is a singleton. Whichever build's copy is served decides dev mode, `ngServerMode` and
-  compiled-API compatibility for the host **and** every remote.
+  compiled-API compatibility for the shell **and** every remote.
 - The adapter package is never shared (it's on its own skip list), so every app bundles its own copy of it. A custom
   `skipList` passed to `shareAll` replaces the Angular skip list instead of extending it.
 - The builder wraps `@angular/build`, so Angular's own build behaviour (chunk optimizer, Vite dev server, HMR,
@@ -22,25 +24,14 @@ https://native-federation.com/docs/v3/llms.txt (v3 adapter). SSR is in [ssr.md](
 
 ## Version map
 
-| Adapter | core `@softarc/native-federation` | runtime |
+| Adapter line | core `@softarc/native-federation` | runtime |
 |---|---|---|
-| v3 17.x – 19.0.x | 2.0.x | classic 2.x |
-| v3 19.0.19 – 20.0.x | 3.0.x – 3.3.x | classic 3.x |
-| v3 20.1 – 21.2.5 (last) | 3.3.6 – 3.5.x | classic 3.x |
-| v4-bridge 20.3.x / 21.1.x (RC) | 4.0 RCs | orchestrator 4.0 |
-| v4-bridge 21.2.0–21.2.6 · 22.0.0–22.0.5 | 4.0 – 4.3 | orchestrator ^4.0 / ^4.2.2 |
-| 22.0.6 · 21.2.8 | 4.3.2 | ^4.5.2 |
-| 22.1.0–22.1.1 · 21.2.9–21.2.10 | 4.4 | ^4.5.2 |
-| 22.1.2 · 21.2.11 | 4.5 | ^4.5.2 |
-| 22.1.3 · 21.2.12 | 4.6 | ^4.6.0 |
-| 22.2.0–22.2.1 · 21.2.13–21.2.14 | 4.7.0 | ^4.6.0 |
-| 22.2.2 · 21.2.15 | 4.7.1 | ^4.6.0 |
-| 22.2.3 · 21.2.16 | 4.8 | ^4.6.0 |
-| 22.2.4 · 21.2.17 | 4.9 | ^4.9.0 |
+| v3: `@angular-architects/native-federation` ≤ 21 | 2.x–3.x | classic runtime |
+| v4-bridge: `@angular-architects/native-federation-v4` (Angular 20/21) | 4.x | orchestrator |
+| v4: `@angular-architects/native-federation` ≥ 22 | 4.x | orchestrator |
 
 Core and orchestrator are ranges, so always read the installed versions (`npm ls @softarc/native-federation
-@softarc/native-federation-orchestrator @angular/build es-module-shims`). Ask for the **build log** too: v4 adapters
-warn there about flat externals and missing `keepAll`, and log the chunk-optimizer and cache decisions.
+@softarc/native-federation-orchestrator @angular/build es-module-shims`). Ask for the **build log** too ([what to look for](build-output.md#reading-the-evidence)).
 
 ## Reading the evidence
 
@@ -56,15 +47,15 @@ warn there about flat externals and missing `keepAll`, and log the chunk-optimiz
 
 - **Shim mode**: `<script type="esms-options">{"shimMode":true}</script>`, main as `type="module-shim"`, map as
   `importmap-shim`, `typeof importShim === 'function'`. `blob:` URLs and `importShim(` in errors or served source come
-  from es-module-shims rewriting a module. In shim mode only `importShim('<x>')` (or `importShim.resolve('<x>')`)
-  sees the map; a plain `import('<x>')` in the console doesn't.
-- **Angular chunk optimizer ran** (v4 on Angular 22, prod): `dist` has rollup/rolldown-style mixed-case chunk names
-  (`chunk-La6B0kZ_.js`) next to esbuild's upper-case ones (`chunk-LTVOGC3Y.js`).
+  from es-module-shims rewriting a module. How to probe one specifier in either mode: [build-output.md](build-output.md#reading-the-evidence).
+- **Angular chunk optimizer ran** (v4 on Angular 22, prod): `dist` has chunk names in a different style from esbuild's
+  upper-case `chunk-XXXXXXXX.js` (e.g. mixed case, `chunk-La6B0kZ_.js`).
 - **Vite dev server**: `/@id/<pkg>` in a URL means Vite rewrote a bare import that should have gone through the import
   map. A `?import` suffix on a specifier means Vite's import analysis saw it. A `text/html` MIME error on a module
   script means a 404 behind the SPA fallback.
 - **Dev mode**: `typeof ngDevMode` (`'object'` = dev) and `typeof ng?.getComponent` tell which `@angular/core` build
-  won. v3 dev bundles have `-dev` in the file name.
+  won. That is the authority for Angular's mode; `-dev` in file names is only a hint about the NF build, and the two
+  can differ.
 - **Which file actually serves**: in dev, diff the bytes served over HTTP before and after an edit.
 
 ## Failure modes
@@ -87,8 +78,8 @@ warn there about flat externals and missing `keepAll`, and log the chunk-optimiz
   ([classic-runtime.md](classic-runtime.md)). v4 shares by semver per the rules above.
 - **Fix direction:** align Angular (maintainers advise equal versions up to the minor, even when one core is shared,
   because compiled code calls private Angular API), use ranges instead of exact pins, and publish all Angular
-  secondaries from the host (`includeSecondaries: { keepAll: true }`, as the `ng add` template does). A secondary
-  pruned from the host's build is a build-output failure mode: see [build-output.md](build-output.md). For
+  secondaries from the shell (`includeSecondaries: { keepAll: true }`, as the `ng add` template does). A secondary
+  pruned from the shell's build is a build-output failure mode: see [build-output.md](build-output.md). For
   intentional multi-version setups, use scopes or web components.
 
 ### Workspace lib both inlined and federated: `NG0201`, a root service created twice
@@ -100,7 +91,7 @@ warn there about flat externals and missing `keepAll`, and log the chunk-optimiz
   `package.json`; mixed or empty versions split it), or when a mapping was pruned from `remoteEntry.json`.
 - **Symptoms:** `NG0201: No provider found for InjectionToken X`, `NullInjectorError`, two constructor logs from
   different files (`_somelib.js` and `chunk-*.js`/`bootstrap-*.js`), state that doesn't sync. Often no error at all.
-  Console on v4: `[<remote>][<lib>] Version '' is not a valid version.`
+  Console on v4: `[<remote>][<lib>] Version '' is not a valid version.`, or an empty `version` in `shared[]` (Step 7).
 - **Evidence:** grep `dist` (or the served files) for the token or class. In `_lib.*.js` **and** an app chunk = inlined.
   Step 7: is the lib in every relevant `shared[]`, with equal versions? Step 5: one URL or two?
 - **Fix direction:** import workspace libs only through their mapping name; give each shared lib a `package.json`
@@ -131,95 +122,79 @@ warn there about flat externals and missing `keepAll`, and log the chunk-optimiz
   - build native, runtime shim: `Failed to resolve module specifier "@angular/core". Relative references must start
     with…` while DevTools shows an `importmap-shim` containing the key.
   - side effects of the shim rewrite: `SyntaxError: Unexpected string` at `importShim(data, …, '<url>')` (a library
-    method named `import`, e.g. DevExtreme); breakpoints and `debugger` stopping a few lines off in `ng serve` (Angular
-    HMR's multi-line `import(` block loses its line breaks); strict CSP (`script-src 'self'`) errors from
+    method named `import`, e.g. DevExtreme); breakpoints or `debugger` lines that don't match the
+    source (shim mode runs rewritten code); strict CSP (`script-src 'self'`) errors from
     `polyfills.js` before `Unable to resolve specifier`.
 - **Evidence:** the served `index.html` (`esms-options`, main tag `type`) and the map tag in the live DOM; for
-  rewrite side effects, the served source at the error position. `"hmr": false` realigns breakpoints.
-- **Applies to:** runtime `shimMode: false` exists on v4 (bridge ≥ 21.2.6, 22.x ≥ 22.0.3). The build side honours
-  `esmsInitOptions.shimMode: false` only on 22.x ≥ 22.1.0; the v4-bridge always writes main as `module-shim`, so there
-  native mode works only if the runtime stays in shim mode too. Native mode needs browsers with multiple import maps
-  (Chrome/Edge 133+, Safari 18.4+).
+  rewrite side effects, the served source at the error position.
+- **Applies to:** on the v4-bridge, es-module-shims always runs in shim mode; native mode needs adapter 22.1+ (build)
+  and a browser that supports multiple import maps. v3 is shim-only.
 - **Fix direction:** make all three markers agree; use native mode when the shim's rewrite breaks code.
-  // TODO: does es-module-shims fix the multi-line `import(` rewrite? Until then, `hmr: false` on the serve target.
 
-### Dev-server serving model: 404, `text/html`, corrupted assets or stale code in `ng serve`
+### Dev-server serving model: 404, `text/html` or stale code in `ng serve`
 - **Mechanism:** the NF dev middleware serves a request only if the file **exists on disk** in the dev output path
   at that moment (URL minus `baseHref` and query). Otherwise Vite handles it: 404, or `index.html` through the SPA
-  fallback. The middleware reads files as UTF-8 text, so binary files come out corrupted. Federation artefacts are
-  rebuilt by a separate watcher, not by Angular's. Live reload across dev servers needs `buildNotifications` in the
-  remote's builder options **and** `sse: true` in the host's `initFederation`.
+  fallback. Federation artefacts are rebuilt by a separate watcher, not by Angular's.
 - **Symptoms:** `GET …/remoteRoutes.js 404`; `Failed to load module script: Expected a JavaScript module script but
-  the server responded with a MIME type of "text/html"`; `Failed to decode downloaded font`; an edit that never shows
-  up although the build log says it rebuilt (or `No output file changes`); the host not reloading after a remote rebuilds.
+  the server responded with a MIME type of "text/html"`; an edit that never shows up although the build log says it
+  rebuilt (or `No output file changes`).
 - **Evidence:** Step 4: request the failing URL directly and compare with the file in the dev output folder (exists?
   same bytes?). Compare manifest URLs with the dev-server banner (port, `baseHref` with both slashes). Diff served
   bytes before and after an edit. If the bytes changed but the page runs old code, check which remote's URL serves the
   lib (Step 5; [orchestrator.md](orchestrator.md)).
 - **Fix direction:** one `serve` target that runs the NF builder; port, SSL and allowed hosts set on the wrapped
-  `serve-original` target (CLI flags aren't forwarded); assets that must be binary served from `public/` or a static
-  server; in v3, `skip` a workspace lib while editing it.
+  `serve-original` target (CLI flags aren't forwarded); in v3, `skip` a workspace lib while editing it.
 
 ### Angular's chunk optimizer: prod-only `t.ɵɵdefineComponent is not a function`
-- **Mechanism:** Angular ≥ 22 re-bundles the host's lazy chunks after esbuild (≥ 3 lazy chunks). The re-bundler can
-  give the namespace import of the external `@angular/core` and a class the same short name. It only touches Angular's
-  own app chunks; `remoteEntry.json`, shared and exposed bundles stay identical. The adapter sets
-  `NG_BUILD_OPTIMIZE_CHUNKS=0` when it is unset; an explicit value wins.
+- **Mechanism:** with Native Federation, Angular's chunk optimizer is disabled and unsupported: the adapter sets
+  `NG_BUILD_OPTIMIZE_CHUNKS=0` when it is unset. If the optimizer runs anyway (an explicit value wins), it re-bundles
+  the shell's lazy chunks after esbuild and can give the namespace import of the external `@angular/core` and a class
+  the same short name. It only touches Angular's own app chunks; `remoteEntry.json`, shared and exposed bundles stay
+  identical. Seeing its fingerprints is the finding.
 - **Symptoms:** a clean build, then a blank page: `TypeError: t.ɵɵdefineComponent is not a function at
-  <static_initializer> (chunk-XXXXXXXX.js)` (or `ɵɵdefineService`). Build log under Nx: `@angular/build was already
-  loaded … re-applied optimizeChunksThreshold=Infinity.` or `Could not re-apply … Builds may re-bundle federated chunks.`
+  <static_initializer> (chunk-XXXXXXXX.js)` (or `ɵɵdefineService`). The build log may say the optimizer setting couldn't be applied
+  (common under Nx, which loads `@angular/build` first).
 - **Evidence:** the optimizer fingerprint in `dist`; `NG_BUILD_OPTIMIZE_CHUNKS` in the build environment; rebuild
   with `NG_BUILD_OPTIMIZE_CHUNKS=0`.
 - **Applies to:** v4 on Angular 22. The v3 adapter never sets it.
-- **Fix direction:** keep the optimizer off; if it's turned on, test the prod build in a browser on every release.
-
-### `index.html` entry-script rewrite: blank page, app rendered twice, main not a module
-- **Mechanism:** the builder rewrites the built `index.html`: one `<script type="esms-options">` right after `<body…>`,
-  the **first** `<script>` whose `src` contains `polyfills` becomes `type="module"`, and the **first** whose `src`
-  contains `main` becomes `module-shim` (or `module` in native mode).
-- **Symptoms:** blank page; `Cannot use import statement outside a module (at main.js:2:1)`; `Failed to resolve module
-  specifier "@angular/platform-browser"`; two apps rendered in `<app-root>`.
-- **Evidence:** the served `index.html`: exactly one `esms-options`, and `type="module-shim"` on the app's own
-  `main-*.js`, not on another script (a CDN `…/js/main.min.js` placed before it gets rewritten instead).
-- **Applies to:** v3's rewrite only matched `<script src="…">` with `src` first, and older releases broke on global
-  `scripts`, `<body>` attributes and `deployUrl`. v4 matches any attribute order and URL prefix.
-- **Fix direction:** keep other scripts whose URL contains `main` or `polyfills` after the app's scripts or out of
-  `index.html`; move global scripts to assets.
+- **Fix direction:** turn the optimizer off (unset `NG_BUILD_OPTIMIZE_CHUNKS`, or set it to `0`).
 
 ### Mixed dev and prod builds: `ReferenceError: ngDevMode is not defined`
-- **Mechanism:** Angular ≥ 20 compiles bare `ngDevMode` references (signal and input debug names). A dev-mode core
+- **Mechanism:** Angular's compiled code can reference `ngDevMode` directly. A dev-mode core
   defines the global at runtime; a prod core has `ngDevMode` inlined as `false` and never defines it. Since
-  `@angular/core` is shared, a remote built unoptimised can run on the host's prod core, which the orchestrator
+  `@angular/core` is shared, a remote built unoptimised can run on the shell's prod core, which the orchestrator
   allows at the same version. On v4, dev mode and minification of shared and exposed bundles follow
   `optimization.scripts`, like Angular's own build.
 - **Symptoms:** `ReferenceError: ngDevMode is not defined` in a dev remote inside a prod shell; or the reverse: no
   dev-mode checks or `ng` global although the remote was built unoptimised.
-- **Evidence:** `typeof ngDevMode` on the page; which build's `_angular_core.*.js` is served (Step 5; v3: `-dev` suffix).
+- **Evidence:** `typeof ngDevMode` on the page (the authority); which build's `_angular_core.*.js` is served (Step 5;
+  a `-dev` suffix is a hint only).
 - **Applies to:** v4 never defines `ngDevMode: 'true'` itself. v3 21.2.3+ defines it in dev builds.
-- **Fix direction:** build all participants in the same mode when they share Angular, or serve the host in dev mode
+- **Fix direction:** build all participants in the same mode when they share Angular, or serve the shell in dev mode
   while developing a remote.
 
 ### Init state per bundle: `loadRemoteModule()` from inside a remote never settles
 - **Mechanism:** the v4 adapter keeps its init promise at module level, and the adapter is never shared, so each app
-  bundles its own copy. Only the host's copy is resolved by `initFederation()`. A remote that calls the top-level
+  bundles its own copy. Only the shell's copy is resolved by `initFederation()`. A remote that calls the top-level
   `loadRemoteModule` waits on its own, never-resolved copy. (The v3 classic runtime kept state on `globalThis`, so
   this worked there.) The top-level `loadRemoteModule` is deprecated in favour of the one `initFederation()` returns.
 - **Symptoms:** silent: the promise neither resolves nor rejects; no log.
-- **Evidence:** the same call works from host code; the hang starts at the first call made from remote code (Step 1).
+- **Evidence:** the same call works from shell code; the hang starts at the first call made from remote code (Step 1).
 - **Applies to:** v4 and v4-bridge. Not v3.
-- **Fix direction:** pass the host's loader into the remote (a bootstrap parameter or an `InjectionToken`). Don't call
-  `initFederation` again in the remote: that replaces the host's import map.
-  // TODO: confirm this is the official pattern.
+- **Fix direction:** the official pattern: the remote's bootstrap function accepts (at least) `loadRemoteModule` from
+  the shell as a parameter or prop, and the remote uses that. Don't call `initFederation` again in the remote: that
+  replaces the shell's import map.
 
 ### Locale data Angular injects: `Failed to resolve module specifier "@angular/common/locales/global/<code>"`
-- **Mechanism:** with `i18n.sourceLocale` set (not en-US), Angular injects an import of
+- **Mechanism:** with `i18n.sourceLocale` set (not en-US), Angular's `localize` injects an import of
   `@angular/common/locales/global/<code>` into `polyfills.js`, outside the micro frontend. `@angular/common` is
-  external, so the import stays bare; the unused-deps scan never sees it.
+  external, so the import stays bare, and the unused-deps scan never sees it: locale data that Angular injects has to
+  be shared and mapped like any other entry point.
 - **Symptoms:** `Failed to resolve module specifier "@angular/common/locales/global/de-CH"…` (Chrome) / `…was a bare
   specifier, but was not remapped to anything` (Firefox), often only in `ng serve` or a localized build.
 - **Evidence:** Step 5: the specifier is absent; the importer is `polyfills.js` or `main.js`.
-- **Applies to:** v3 21.2.4+ injects it automatically. No released v4 adapter does.
-- **Fix direction:** share it explicitly (`shareAngularLocales(['global/<code>'])`).
+- **Fix direction:** if the adapter doesn't map it, share it explicitly (`shareAngularLocales(['global/<code>'])`).
+  // TODO: update once locale mapping ships in the v4 adapter (v3 21.2.4+ already maps it).
 
 Failure modes with their home elsewhere:
 - A shared package's secondary pruned from one build (`rxjs-interop`, Material internals, `Unable to resolve specifier
@@ -228,14 +203,3 @@ Failure modes with their home elsewhere:
 
 If the evidence matches none of these failure modes, suspect a defect: build a reproduction ([repro.md](repro.md))
 and check the repo's issue tracker.
-
-## Questions for the maintainer
-
-1. Is "pass the host's loader into the remote" the official pattern, or will the adapter share init state again?
-2. Is `NG_BUILD_OPTIMIZE_CHUNKS=0` the permanent default? Is Angular's rolldown optimizer (≥ 22.1) considered safe?
-3. Should the `index.html` rewrite match the app's own entry script exactly, and should the dev middleware serve raw bytes?
-4. Should the v4-bridge honour `esmsInitOptions.shimMode: false`, and should the builder warn when build and runtime
-   shim modes can disagree?
-5. Will v4 inject the `locales/global/<code>` data like v3 21.2.4 did?
-6. Should a host reload when a remote's dev server rebuilds, across servers?
-7. Could `remoteEntry.json` record the adapter version and dev/optimised mode? Several checks would become one lookup.

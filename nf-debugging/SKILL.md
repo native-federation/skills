@@ -13,16 +13,18 @@ This skill finds the cause. The fix belongs to **nf-development**. For version-s
 details, fetch the live docs: https://native-federation.com/llms.txt (v4) or
 https://native-federation.com/docs/v3/llms.txt (v3). Every page is also available as `.md`.
 
-## The model in five lines
+## The model in six lines
 
-1. Bundlers leave shared packages as bare imports. A runtime in the page reads every
+1. There is one host (shell): the only app that calls `initFederation`, and it has no `exposes`. Every app with
+   `exposes` is a remote, even when it loads other remotes (with the shell's `loadRemoteModule`).
+2. Bundlers leave shared packages as bare imports. The runtime in the shell reads every
    `remoteEntry.json`, decides which file serves each shared package, and writes one import map.
-2. The browser resolves every bare import through that map, **by the URL of the importing file**:
+3. The browser resolves every bare import through that map, **by the URL of the importing file**:
    a file that lives under a remote's URL uses that remote's scope, whoever loaded it.
-3. One URL is one module instance. The same package at two URLs is two singletons.
-4. So the cause is usually visible in what the browser received (import map, remote entries, the
+4. One URL is one module instance. The same package at two URLs is two singletons.
+5. So the cause is usually visible in what the browser received (import map, remote entries, the
    runtime's cache, the network), not in the source. Read those first and the code second.
-5. Classify every finding on two axes: the NF line of each participant (v3 / v4 / v4-bridge on
+6. Classify every finding on two axes: the NF line of each participant (v3 / v4 / v4-bridge on
    Angular 20–21) and where it happens (orchestrator / classic runtime / build output / Angular).
 
 ## Access level decides who runs the steps
@@ -42,12 +44,12 @@ the evidence names the cause; skip steps whose branch doesn't apply.
 
 Gather: the exact error text, and *when* it happens: initial load, navigating to a lazy remote,
 only after a deploy, only on a reload (warm cache), only after navigating from page A to page B (multi-page
-hosts: page A's cache drives page B), only in prod or only in dev, only with one remote.
+shells: page A's cache drives page B), only in prod or only in dev, only with one remote.
 Rules out: nothing yet, but it chooses the branch. Init-time errors point at entries, the manifest
 or resolution. Errors on first navigation point at `loadRemoteModule`/`initRemoteEntry` and exposes.
 Errors that start after a deploy, or only on reload, point at caches (Step 8).
-Also note each app's role. An app with `exposes` is a remote. A host never exposes. If an app both hosts and
-exposes, that is the problem: split the exposed part into its own remote.
+Also note each app's role. If an app both calls `initFederation` and has `exposes`, that is the problem: split the
+exposed part into its own remote.
 
 ### 2. Identify the browser runtime and versions
 
@@ -56,14 +58,14 @@ Run [scripts/detect-runtime.js](scripts/detect-runtime.js) after init.
 | Evidence | Means |
 |---|---|
 | `globalThis.__NF_ORCHESTRATOR__.storage` present | Orchestrator ≥ 4.7; its entry gives the `version` and storage `type`. More than one entry means more than one orchestrator on the page: unsupported, and the finding ([orchestrator.md](references/orchestrator.md#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps)) |
-| `globalThis.__NATIVE_FEDERATION__.externals instanceof Map` | Classic runtime (`@softarc/native-federation-runtime`, also the v3 Angular adapter) |
+| `globalThis.__NATIVE_FEDERATION__.externals instanceof Map` | Classic runtime (`@softarc/native-federation-runtime`, also the v3 Angular adapter). Maps next to orchestrator records or a descriptor: two runtimes on one page, the [more than one orchestrator](references/orchestrator.md#more-than-one-orchestrator-on-the-page-unpredictable-versions-or-maps) failure |
 | `globalThis.__NATIVE_FEDERATION__` has `remotes`/`shared-externals`, or storage has `<ns>.remotes` | Orchestrator (the default namespace is the same name as the classic global, so check the shape) |
-| Import-map keys like `mfe1/./Component` | Orchestrator. The classic runtime writes `mfe1/Component` |
+| Import-map keys like `mfe1/./Component` | A weak hint for the orchestrator only: `/./` is a convention, not enforced. Storage shape and the descriptor decide |
 | `importmap-shim` maps, `typeof importShim === 'function'` | Shim mode (es-module-shims). Both runtimes can use it, so it does not identify the runtime. The Angular adapters default to it |
-| `window.__NF_REGISTRY__` | The registry script (`init-registry.mjs`) is loaded: quickstart registers `orch.init-ready` on it, and apps may use it as their event bus. Most npm-built hosts don't have it, so its absence proves nothing, unless a remote warns `__NF_REGISTRY__ is missing` |
-| `[ng-version]` attribute | The host's Angular version. 20 or 21 plus the orchestrator usually means the v4-bridge package |
+| `window.__NF_REGISTRY__` | The registry script (`init-registry.mjs`) is loaded: quickstart registers `orch.init-ready` on it, and apps may use it as their event bus. Most npm-built shells don't have it, so its absence proves nothing, unless a remote's code throws reading `onReady` of undefined |
+| `[ng-version]` attribute | The shell's Angular version. 20 or 21 plus the orchestrator usually means the v4-bridge package |
 
-Then fetch each participant's `remoteEntry.json` (host: `./remoteEntry.json`) and read its core line from
+Then fetch each participant's `remoteEntry.json` (shell: `./remoteEntry.json`) and read its core line from
 the [fingerprints](references/build-output.md#reading-the-evidence). The orchestrator loads v3 and v4 entries
 alike, so **classify each participant separately**, not the page.
 With repo access, confirm in `package.json`: `@angular-architects/native-federation-v4` means the
@@ -71,35 +73,36 @@ v4-bridge, `@angular-architects/native-federation@<22` means v3, and `@softarc/n
 
 Rules out: the failure modes of the other runtime, and every orchestrator-only cause (semver
 resolution, share scopes, storage cache, pooling, the DevTools extension) on the classic runtime.
-`runtime: unknown` means init never committed a map: go to Step 4 for the manifest and entries.
+`runtime: unknown` means no NF runtime state at all: init never ran (check `main.ts` and Step 4), an orchestrator older
+than 4.7 whose init failed, or a custom storage with its descriptor disabled.
 
 Branch:
 - **Classic runtime**: read [references/classic-runtime.md](references/classic-runtime.md), then continue at Step 3. Skip Step 6.
 - **Orchestrator**: continue. Read [references/orchestrator.md](references/orchestrator.md) once you reach Step 3.
-- **`vanilla-native-federation`** (the pre-4.x orchestrator, 0.x–1.x; same namespace, `/./` keys and `remotes`/`shared-externals`, but no `shared-chunks`, `cache-state` or descriptor): out of scope. Upgrade to `@softarc/native-federation-orchestrator` first.
+- **`vanilla-native-federation`** (the pre-4.x orchestrator): out of scope. Upgrade to `@softarc/native-federation-orchestrator` first.
 - **Angular** at any point: also read [references/angular.md](references/angular.md).
 - **The failure is on the server** (SSR render error, Node stack trace, `initNodeFederation`): see [SSR](#ssr) below.
 
-**No descriptor on an orchestrator page.** Publishing `__NF_ORCHESTRATOR__` is expected to become opt-in through
-`profile: { enableDebugging: true }` ([roadmap](https://github.com/native-federation/orchestrator/issues/131)).
-If the descriptor is missing on orchestrator ≥ 4.7 and you can rebuild, ask the host to set it. Otherwise fall
-back to probing: `__NATIVE_FEDERATION__['cache-state']` (4.8+, written even when init fails),
-`['shared-externals']`, `<ns>.remotes` storage keys and `/./` import-map keys still identify the orchestrator,
-and `dump-orchestrator-storage.js` probes the default namespace in every built-in storage.
+**No descriptor on an orchestrator page.** The shell may have disabled it, or the orchestrator predates it. Probe
+instead: `__NATIVE_FEDERATION__['cache-state']` (4.8+, written even when init fails),
+`['shared-externals']` and `<ns>.remotes` storage keys still identify the orchestrator,
+and `dump-orchestrator-storage.js` probes the default namespace in every built-in storage. A custom storage adapter is invisible to
+probing: only the descriptor's `get()` reads it.
 
 ### 3. Read the console, at the right log level
 
 Gather: every error and warning, in order, with stacks.
 - **Logging is bring-your-own-logger.** The orchestrator's default logger is a no-op and its default level is
-  `error`, so a plain orchestrator host prints nothing at all. To debug, the host passes the console logger at
+  `error`, so a plain orchestrator shell prints nothing at all. To debug, the shell passes the console logger at
   debug level and rebuilds:
   `initFederation(manifest, { logger: consoleLogger, logLevel: 'debug' })` (`consoleLogger` from
-  `@softarc/native-federation-orchestrator/options`). The Angular adapter already passes the console logger at
-  `error`, so there only `logLevel: 'debug'` (or `'warn'`) needs adding. Lines read `[NF][<n>]: …` (warn/error)
+  `@softarc/native-federation-orchestrator/options`). With an adapter, check which logger and level its
+  `initFederation` passes, and raise the level (`logLevel: 'debug'`). Lines read `[NF][<n>]: …` (warn/error)
   and `[DEBUG][<n>]: …`, where `<n>` is the orchestrator's phase. Details: [orchestrator.md](references/orchestrator.md#turn-on-logging-step-3).
   If you can't rebuild, read the same verdicts from storage in Step 6.
 - **A clean console proves nothing.** A scoped copy outside a pool (Step 6) and a missing shared package log no
-  `[NF]` line on a cold init, even at debug. Run Steps 5 and 6 regardless.
+  `[NF]` line on a cold init, even at debug. Run Steps 5 and 6 regardless. With browser tools that attach after
+  load, missing init-time lines are a tool limitation, not a clean console ([repro.md](references/repro.md#with-chrome-mcp-tools-instead)).
 - **The earliest `[NF]` line is the cause; later lines are symptoms.** `Remote 'x' is not initialized.` on
   navigation is the consequence of an earlier `[NF][1]: Could not fetch remote 'x'.`
 - The resolve error's wording identifies the loader: es-module-shims says `Unable to resolve specifier 'x' imported
@@ -114,7 +117,8 @@ failures look like end to end: [orchestrator.md](references/orchestrator.md#what
 Gather: the manifest and every `remoteEntry.json` response (status, `content-type`, body), 404s
 on JS files, CORS failures, and which origin each copy of a shared package was fetched from.
 Rules out: deploy and infra causes. Watch for a `remoteEntry.json` that returns `index.html`
-(SPA fallback; a JSON parse error at init), a CDN that serves an old entry, and files missing for the
+(SPA fallback: `[NF][1]: Could not fetch remote 'x'. skipping init. NFError: Fetch of '<url>' returned Unexpected
+token '<', "<html>…" is not valid JSON`; init continues), a CDN that serves an old entry, and files missing for the
 hash an entry names. An SRI block on a 200 response shows only in the console, not among failed requests.
 
 ### 5. Inspect the effective import map
@@ -123,7 +127,8 @@ Run [scripts/dump-import-map.js](scripts/dump-import-map.js). In shim mode, trus
 `importShim.getImportMap()` over the DOM.
 Gather: is the failing specifier mapped, and from which scope? Resolve it by hand: take the URL of
 the *importing file*, find the most specific scope prefix that has the specifier, else `imports`.
-For a duplicate instance, list every URL a package is mapped to and which files resolve to each.
+For a duplicate instance, list every URL a package is mapped to and which files resolve to each. To test one
+specifier, probe it in the page ([build-output.md](references/build-output.md#reading-the-evidence)).
 Rules out: "not mapped at all" (build output or `skip`/`ignoreUnusedDeps`: go to Step 7) versus
 "mapped to the wrong build" (resolution: go to Step 6) versus "mapped correctly" (the problem is
 execution or app code).
@@ -139,9 +144,10 @@ Rules out: a stale cache (cached entry differs from the live one), version-resol
 [references/pooling.md](references/pooling.md).
 **Scoped copy (by design).** A remote that can't use the shared copy runs its own: `scopes["<remote url>/"]` in the
 map, `action: "scope"` in storage, and no log line on a cold init. For a singleton that is a second instance, which
-fails only when the remote's code meets the host's instance. When it happens:
+fails only when the remote's code meets the shell's instance. When it happens:
 [orchestrator.md](references/orchestrator.md#scoped-copy-a-framework-or-library-runs-twice-no-warning).
-The storage shapes described in the references are those of 4.x; the format changes in the next major.
+The storage shapes in the references are those of orchestrator 4.x; on another major, check the descriptor's
+`version` first.
 DevTools extension: if the user has it, ask for a screenshot of the relevant tab or its **Export JSON**.
 
 ### 7. Compare the remote entries
@@ -149,7 +155,8 @@ DevTools extension: if the user has it, ask for a screenshot of the relevant tab
 Gather: for the packages involved, put every participant's `shared` rows side by side (`version`,
 `requiredVersion`, `strictVersion`, `singleton`, `shareScope`, `pool`, `entries`), and check
 `exposes` keys against the `loadRemoteModule` call. Without a browser, use the one-liner in
-[repro.md](references/repro.md#diff-two-builds).
+[repro.md](references/repro.md#diff-two-builds). Ask for the build log of the build that produced the
+failing entry, which may live in another repo ([build-output.md](references/build-output.md#reading-the-evidence)).
 Rules out: build-output causes: a package that isn't shared, a secondary entry point one build
 lacks, ranges that don't overlap, a scope mismatch, an expose key typo. See
 [references/build-output.md](references/build-output.md).
@@ -160,6 +167,8 @@ Clear site data (or use a fresh profile), then reload twice.
 Rules out: cache causes. If it fails only warm, the persisted cache is the suspect
 ([orchestrator.md](references/orchestrator.md#cache-rules-step-8)); the classic runtime caches nothing, so
 there it's the HTTP cache. If it fails cold too, the cause is deterministic in the inputs you collected in Steps 4–7.
+If the served files themselves are older than the sources (a rebuilt change doesn't show, cold and warm alike), purge
+the build caches and rebuild ([build-output.md](references/build-output.md#build-caches-stale-output-files)).
 
 ### 9. Reproduce and bisect
 
@@ -170,7 +179,7 @@ When the evidence matches none of the failure modes, suspect a defect: build a r
 
 The browser steps above don't apply to errors raised during the server render. First decide which side fails:
 `curl` the page and look for the remote's markup. Missing markup means the server-side federation failed: read
-[references/ssr.md](references/ssr.md). Markup that disappears on hydration is a browser problem: use the procedure.
+[references/ssr.md](references/ssr.md) (the orchestrator in Node). Markup that disappears on hydration is a browser problem: use the procedure.
 
 ## Symptom routing
 
@@ -180,16 +189,16 @@ the evidence and the fix direction, per version line where behaviour differs by 
 | Symptom | Failure mode (concept) | Start at Step | Read |
 |---|---|---|---|
 | `Failed to resolve module specifier "x"` / `Unable to resolve specifier 'x' imported from …` | **Unmapped specifier**: `x` (often a secondary entry point, deep path or locale) is in no build's `shared`: pruned, skipped or not exported | 5 → 7 | [build-output.md](references/build-output.md#declaration-a-sub-path-or-entry-point-isnt-declared) |
-| A feature silently does nothing (e.g. Angular animations), no error | **Unmapped specifier** behind a dynamic `import()` that the framework swallows. Try `importShim('<specifier>')` | 5 → 7 | [build-output.md](references/build-output.md#pruning-ignoreunuseddeps-an-entry-point-the-app-doesnt-import-isnt-published) |
-| `NG0203`, `NG0201`/`NullInjectorError`, a root service created twice, "Invalid hook call", `instanceof` failing | **Scoped copy** (second instance by design: strict range, pool, `singleton: false`, or, from orchestrator 4.8, entry-point coverage); classic: **exact-version sharing** | 5 → 6 | [orchestrator.md](references/orchestrator.md#scoped-copy-a-framework-or-library-runs-twice-no-warning), [classic-runtime.md](references/classic-runtime.md#exact-version-sharing-a-shared-package-runs-twice-ng0203-nullinjector-services-not-singleton) |
+| A feature silently does nothing (e.g. Angular animations), no error | **Unmapped specifier** behind a dynamic `import()` that the framework swallows. Probe it from the console (build-output.md) | 5 → 7 | [build-output.md](references/build-output.md#pruning-ignoreunuseddeps-an-entry-point-the-app-doesnt-import-isnt-published) |
+| `NG0203`, `NG0201`/`NullInjectorError`, a root service created twice, "Invalid hook call", `instanceof` failing | **Scoped copy** (a second instance by design); classic: **exact-version sharing** | 5 → 6 | [orchestrator.md](references/orchestrator.md#scoped-copy-a-framework-or-library-runs-twice-no-warning), [classic-runtime.md](references/classic-runtime.md#exact-version-sharing-a-shared-package-runs-twice-ng0203-nullinjector-services-not-singleton) |
 | Same, and the duplicate is a workspace library or a component class | **Inlined and federated**: the library is bundled into a chunk *and* published as a shared file | 5 → 7 | [angular.md](references/angular.md#workspace-lib-both-inlined-and-federated-ng0201-a-root-service-created-twice), [build-output.md](references/build-output.md#not-shared-skip-the-dependency-list-and-mappings-produce-a-bundled-copy) |
 | `NG0203` only once a secondary entry point (`toSignal()`/`rxjs-interop`) runs | **Entry-point coverage**: the serving build lacks the secondary. Orchestrator ≥ 4.8 runs the whole package from the remote's own build; ≤ 4.7 serves it from another build | 5 → 6 → 7 | [orchestrator.md](references/orchestrator.md#missing-entry-point-in-the-serving-build-ng0203-once-tosignal--rxjs-interop-runs), [build-output.md](references/build-output.md#pruning-ignoreunuseddeps-an-entry-point-the-app-doesnt-import-isnt-published) |
 | `[NF][3]`/`[NF][8]` "is islanded" / "serves its own family" | **Pooling**: a range conflict or a coverage gap inside a labelled family | 6 | [pooling.md](references/pooling.md#failure-modes) |
 | `Could not fetch remote 'x'`, JSON parse error, later `Remote 'x' is not initialized.` | **Remote entry not loaded**: wrong manifest URL, CORS, or `remoteEntry.json` answered by an HTML fallback | 4 | [orchestrator.md](references/orchestrator.md#remote-absent-remote-r-is-not-initialized) |
 | `Exposed module '…' … not found in storage.` / `Unknown exposed module` / `unknown remote` | **Remote registry**: expose key or remote name doesn't match, or the cached entry is an older build | 7 → 6 | [orchestrator.md](references/orchestrator.md#exposed-module-not-found-exposed-module-key-from-remote-r-not-found-in-storage), [classic-runtime.md](references/classic-runtime.md#registration-at-init-unknown-remote-permanent-fallback-a-second-import-map) |
 | A deploy isn't visible, old files are requested, or `chunk-*.js` 404s after a deploy | **Cache**: a warm init skips refetching a cached remote at an unchanged URL; or HTTP caching of entries/manifest | 8 → 6 | [orchestrator.md](references/orchestrator.md#stale-cached-remote-a-deploy-doesnt-show-or-it-fails-only-on-reload), [build-output.md](references/build-output.md#dev-and-prod-builds-different-output-and-mixing-them) |
-| `Expected a JavaScript module script but the server responded with a MIME type of "text/html"` | **HTML fallback**: a federation URL resolved against the wrong base, or the file is missing | 4 | [angular.md](references/angular.md#dev-server-serving-model-404-texthtml-corrupted-assets-or-stale-code-in-ng-serve), [orchestrator.md](references/orchestrator.md#remote-absent-remote-r-is-not-initialized) |
-| `does not provide an export named 'X'` (often from a `blob:` URL) | **Module format and build cache**: a CommonJS package converted to ESM, or shared bundles from a stale build cache | 5 → 7 | [build-output.md](references/build-output.md#commonjs-interop-named-exports-missing-or-require-at-runtime) / [externals cache](references/build-output.md#externals-cache-a-stale-shared-bundle) |
+| `Expected a JavaScript module script but the server responded with a MIME type of "text/html"` | **HTML fallback**: a federation URL resolved against the wrong base, or the file is missing | 4 | [angular.md](references/angular.md#dev-server-serving-model-404-texthtml-or-stale-code-in-ng-serve), [orchestrator.md](references/orchestrator.md#remote-absent-remote-r-is-not-initialized) |
+| `does not provide an export named 'X'` (often from a `blob:` URL) | **Module format and build cache**: a CommonJS package converted to ESM, or shared bundles from a stale build cache | 5 → 7 | [build-output.md](references/build-output.md#commonjs-interop-named-exports-missing-or-require-at-runtime) / [externals cache](references/build-output.md#build-caches-stale-output-files) |
 | CSP `Executing inline script violates …` / Trusted Types policy `nfo` refused | **Shim mode and page security**: es-module-shims and the orchestrator's DOM sinks need CSP/Trusted Types allowances | 3 | [orchestrator.md](references/orchestrator.md#integrity-and-trusted-types-a-module-is-blocked), [angular.md](references/angular.md#shim-vs-native-mode-modules-fail-before-or-while-loading) |
 | `loadRemoteModule` never settles or the remote never renders, no error, no failed request | **Loader instance and init order**: the call reached a loader that was never initialised, or ran before init resolved | 3 → 5 | [angular.md](references/angular.md#init-state-per-bundle-loadremotemodule-from-inside-a-remote-never-settles), [orchestrator.md](references/orchestrator.md#init-signal-missed-the-remote-never-mounts-no-error-no-failed-request) |
 | `Failed to initialize remote entry, continuing anyway.` / `Already initialized from …` | **Late registration** (`initRemoteEntry`): additive only; failures surface at `loadRemoteModule` | 3 → 4 | [orchestrator.md](references/orchestrator.md#late-remote-initremoteentry-scoped-although-a-global-choice-would-fit-or-ignored) |
@@ -217,5 +226,5 @@ Paste into the page's console after init, or run through a browser tool. All of 
 | [references/classic-runtime.md](references/classic-runtime.md) | The page runs the classic runtime |
 | [references/angular.md](references/angular.md) | The app is Angular |
 | [references/build-output.md](references/build-output.md) | A `remoteEntry.json` looks wrong, or a specifier isn't mapped |
-| [references/ssr.md](references/ssr.md) | The failure happens during the server render |
+| [references/ssr.md](references/ssr.md) | The failure happens during the server render: the orchestrator in Node |
 | [references/repro.md](references/repro.md) | You need to serve, capture, reproduce or bisect |

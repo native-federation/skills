@@ -2,7 +2,6 @@
 
 Live docs: [Dependency Pooling](https://native-federation.com/docs/v4/orchestrator/pooling.md). The full
 internals are in [docs/version-resolver.md §Dependency Pooling](https://github.com/native-federation/orchestrator/blob/main/docs/version-resolver.md#dependency-pooling).
-Source: `src/lib/core/1.domain/pooling/` and `src/lib/core/2.app/steps/pooling/`.
 
 Pooling is orchestrator-only and opt-in through `pool` labels. The classic runtime has nothing like it.
 This file describes **orchestrator ≥ 4.8**. For older versions see [Before 4.8](#before-48) at the end.
@@ -41,6 +40,8 @@ turn, comes from **one build that shipped them together**.
 
 ## How pools form
 
+Pooling is only ever explicit: no `pool` label, no pooling.
+
 - A remote sets `pool: '<label>'` on a shared package in `federation.config` (core ≥ 4.3.0 passes it through
   unchanged). With dense externals there is one label per package record; flat builds label each entry point separately.
 - A pool is a connected component of a graph. Every external is a node, every label is a node, and a remote that
@@ -56,10 +57,9 @@ turn, comes from **one build that shipped them together**.
 - Pools form per share scope. The `strict` scope is never pooled.
 - A label that joins nothing is logged at `debug` (a typo or a missing sibling) and pools nothing.
 
-The orchestrator assigns no default `pool`; the label comes only from the remote entry. Neither Angular adapter emits
-one by default either: the `ng add` template only patches `includeSecondaries: { keepAll: true }`
-on `@angular/*`. `share()`/`shareAll()`/`fromPackageJson().patch()` pass `pool` through on the v4-bridge and 22.x with
-core ≥ 4.3.0 (bridge 21.2.7+, 22.0.5+). `pool` is part of the externals cache key (core ≥ 4.4.0).
+Labels come only from the remote entry: check the `shared` rows for `pool` and don't assume any adapter or core
+default. A `pool` set in the federation config but missing from `remoteEntry.json` means the build predates
+pass-through (core 4.3, v4-bridge 21.2.7, 22.0.5).
 
 ## The election (init)
 
@@ -68,7 +68,7 @@ which never sees a pooled external (init flow: fetch → store → **pool** → 
 Everything is compared **by specifier**, never by external name, so flat and dense builds compare correctly.
 Tags are compared for identity and for range acceptance only, never for distance.
 
-1. **Round 1 elects the global map.** When the host ships any member, **the host's build is the only
+1. **Round 1 elects the global map.** When the shell ships any member, **the shell's build is the only
    candidate** (its files are loaded anyway and can't be repointed). Otherwise every build is a candidate, ranked by:
    1. the newer build, but only under `profile.latestSharedExternal`;
    2. the most remotes served;
@@ -91,14 +91,14 @@ Tags are compared for identity and for range acceptance only, never for distance
 
 Rules that follow, and that you will see in evidence:
 - **All or nothing per remote.** A remote runs its whole family from exactly one build.
-- **The host never gives way.** A remote whose range rejects the host's tag is islanded. A remote that imports an
-  entry point the host lacks (`@angular/core/rxjs-interop`) runs on a subpool's or its own runtime.
-- **Coherent per remote, not per page.** A remote off the host's build runs another framework instance.
-  Rendering its components inside the host's tree (shared DI) then fails with `NG0203`. That is the expected cost,
+- **The shell never gives way.** A remote whose range rejects the shell's tag is islanded. A remote that imports an
+  entry point the shell lacks (`@angular/core/rxjs-interop`) runs on a subpool's or its own runtime.
+- **Coherent per remote, not per page.** A remote off the shell's build runs another framework instance.
+  Rendering its components inside the shell's tree (shared DI) then fails with `NG0203`. That is the expected cost,
   not a pooling defect.
 - **Strict.** Under `strict.strictExternalCompatibility`, init throws when a `strictVersion` range rejects a tag of the
   elected build. A coverage miss never throws.
-- Round 1 is greedy. It is not a global optimum. The preference order is: on the host's runtime, then fewer duplicate
+- Round 1 is greedy. It is not a global optimum. The preference order is: on the shell's runtime, then fewer duplicate
   instances, then fewer self-served copies, then fewer builds.
 
 ## How verdicts land in the record and the import map
@@ -117,9 +117,9 @@ the order is `share`, `skip`, `scope`.
 - On pooled copies, `cached: true` means "the current map serves this file". It does **not** mean HTTP-cached.
 - `servingBuild` on the external is the one build every specifier of that package is served from in this scope.
   It is set for unpooled packages too.
-- The host is stored as `__NF-HOST__`.
+- The shell is stored as `__NF-HOST__`.
 
-Example (orchestrator 4.9, verified): the host ships `@angular/core` 22.1.0 without `rxjs-interop`. mfe1 ships
+Example (orchestrator 4.9, verified): the shell ships `@angular/core` 22.1.0 without `rxjs-interop`. mfe1 ships
 22.1.0 *with* `rxjs-interop`. mfe2 ships 21.2.15 with a strict `~21.2.0` range. All are labelled `angular`.
 
 ```jsonc
@@ -130,7 +130,7 @@ Example (orchestrator 4.9, verified): the host ships `@angular/core` 22.1.0 with
     { "tag": "21.2.15", "action": "scope", "host": false, "remotes": [{ "name": "mfe2", "poolCause": "incompatible" }] } ] }
 ```
 
-So mfe1 runs its own Angular **at the same version as the host**, because the host's build lacks `rxjs-interop`.
+So mfe1 runs its own Angular **at the same version as the shell**, because the shell's build lacks `rxjs-interop`.
 mfe2 runs its own Angular because its range rejects 22.1.0.
 
 ## Re-election, warm pages and dissolution
@@ -167,12 +167,11 @@ replay the same navigation, and don't just reload.
 
 Coherence first, then downloads. Expected by design:
 - A remote that would mix builds downloads its own family (more files, more `scopes`).
-- A remote off the host's build runs a second framework instance. That is fine standalone and fails with `NG0203` when it is composed into the host's tree.
-- The global version of a pooled family can move to an **older** build that serves more remotes (new in 4.8).
-- The opposite also happens: where per-package resolution split a family, pooling can save files (one portfolio
-  measured `@angular/*` drop from 75 to 63).
+- A remote off the shell's build runs a second framework instance. That is fine standalone and fails with `NG0203` when it is composed into the shell's tree.
+- The global version of a pooled family can move to an **older** build that serves more remotes.
+- The opposite also happens: where per-package resolution split a family, pooling can save files.
 
-The fixes are build-side, which is the nf-development skill's job. The usual ones: align versions and ranges with the host,
+The fixes are build-side, which is the nf-development skill's job. The usual ones: align versions and ranges with the shell,
 ship the gap entry point in the elected build (or stop importing it), label the whole family, or drop the label.
 There is no per-portfolio knob.
 
@@ -202,10 +201,12 @@ Every init warning ends with where the copies now come from: `All N of its entry
 (self-served), `It runs in subpool '<b>' for all N of its entrypoints.`, or
 `Its build serves subpool '<self>': its N entrypoints and K other remote(s).`
 
+Wording as of 4.8–4.9; match on the quoted fragments, and trust the record fields over the text.
+
 | Level | Line | Meaning, and the next check |
 |---|---|---|
 | warn 3 | `'<r>' is islanded: its range rejects '<member>@<tag>' of the elected build '<winner>'.` | A real version conflict. Compare `<r>`'s `requiredVersion` with `<tag>` in both remote entries |
-| warn 3 | `'<r>' serves its own family: no elected build offers every entrypoint it imports at a version it accepts (gap '<gap>', closest '<winner>').` | Coverage. Is `<gap>` missing from `<winner>`'s `remoteEntry.json`? Usually yes (the host lacks `rxjs-interop`, `animations/async`, …) |
+| warn 3 | `'<r>' serves its own family: no elected build offers every entrypoint it imports at a version it accepts (gap '<gap>', closest '<winner>').` | Coverage. Is `<gap>` missing from `<winner>`'s `remoteEntry.json`? Usually yes (the shell lacks `rxjs-interop`, `animations/async`, …) |
 | warn 3 | `'<r>' serves its own family: no build shipped its entrypoints together at the elected versions (gap …)` | Witness. Every tag is acceptable, but no single build has this combination |
 | warn 3 | `'<b>' keeps subpool '<b>': the elected build would serve it, but K other remote(s) in it need its build.` | Nothing to fix on `<b>`. Align the other subpool members |
 | warn 8 | `… is islanded: its range rejects '<spec>@<tag>' of the committed map.` / `no committed build offers …` / `no committed build shipped the map's combination for it.` | The same findings for a late remote, judged against the committed map |
@@ -233,26 +234,29 @@ Then classify the failing remote from its copies of the family:
 
 | Evidence on the failing remote's copies | Means | Points to |
 |---|---|---|
-| `share`/`skip`, no `servedBy`, same build as the host | On the host's runtime. Pooling isn't the cause | Look elsewhere (app code, an unpooled package) |
-| `servedBy: <b>` | Runs subpool `<b>`'s framework instance | Composed into the host tree? Then `NG0203` is the expected cost. Align with the host |
+| `share`/`skip`, no `servedBy`, same build as the shell | On the shell's runtime. Pooling isn't the cause | Look elsewhere (app code, an unpooled package) |
+| `servedBy: <b>` | Runs subpool `<b>`'s framework instance | Composed into the shell tree? Then `NG0203` is the expected cost. Align with the shell |
 | `poolCause: incompatible` | Islanded by its own range | A version or range conflict. Find the matching warn line for the member and tag |
-| `poolCause: uncovered` | The winner lacks an entry point this remote imports | The warn line's `gap`. Ship it in the winner, usually the host |
+| `poolCause: uncovered` | The winner lacks an entry point this remote imports | The warn line's `gap`. Ship it in the winner, usually the shell |
 | `scope`, no `poolCause`, family unlabelled | Scoped copy decided per package (strict range or coverage), unpooled | Two cores possible (own `core` + shared `common`). **Pooling should be involved**: labels are missing |
 | Members of one family resolve to files under different remotes' URLs for one remote, and no `servedBy` explains it | A tear the promise forbids | **Suspected defect**: cold test, then repro with 2–3 remotes ([repro.md](repro.md)) |
 
 To confirm a duplicate instance by hand: take the failing file's URL, resolve its import of the family root
-through the import map (most specific scope first, then `imports`), and compare with what the host's file resolves to.
+through the import map (most specific scope first, then `imports`), and compare with what the shell's file resolves to.
 Two URLs means two instances.
+
+If the evidence matches none of these failure modes, suspect a defect: build a reproduction ([repro.md](repro.md))
+and check the repo's issue tracker.
 
 ## Before 4.8
 
-Enough to explain an older setup. The fix for every case below is to upgrade to ≥ 4.8, and then
-expect one cold init, because 4.8 stamps the cache with the orchestrator version (`cache-state`) and clears it once.
-
-| Version | Model | Why an older setup misbehaves |
-|---|---|---|
-| 4.5–4.6 | First pooling. Pools formed from `pool` labels **or automatically by npm scope** (opt-in `feature.useAutoExternalPooling`, default `false`). The resolver picked each member's version, then pooling reconciled the result onto an "anchor" remote | Because members were elected one by one and repaired afterwards, a family could still reach a remote from more than one build. Expect pooling verdicts that differ from the 4.8 election described above |
-| 4.7.0 | **Breaking:** auto-pooling removed, so only explicit labels pool. Stores `poolName` and `poolCause` (`incompatible`/`uncovered`/`torn`/`unshared`). Pool names in logs changed (`[pool:@angular/core]` → `[pool:angular]`) | A setup that relied on `useAutoExternalPooling` silently **stops pooling** after upgrading to 4.7. Members are still resolved one by one, and a package's entry points can be served from two builds at one tag, so `NG0203` appears only once a borrowed entry point such as `rxjs-interop`/`toSignal()` runs |
-| ≥ 4.8.0 | Current: each pool is elected as one family, there is one build per package (no stitching), and `poolWinner`, `servedBy` (as now) and `servingBuild` are stored. `poolCause` is reduced to two values, warnings were reworded, and `strictEntryPointCoverage`/`scopeUncoveredEntrypoints` became no-ops | After upgrading: a global version may move to an older build, more downloads and `scopes` appear, and remotes that never labelled anything get pooling warnings (one label pools the whole package) |
-
-// TODO: are any production portfolios still on 4.5–4.7 with pooling? If not, shrink this section to the first column.
+Pooling before 4.8 worked differently. Don't debug it in depth: upgrade to ≥ 4.8 (expect one cold init, because 4.8
+stamps the cache with the orchestrator version and clears it once).
+- **What changed:** 4.5–4.6 could also pool automatically by npm scope (opt-in `feature.useAutoExternalPooling`); 4.7
+  removed that, so only explicit `pool` labels pool. Up to 4.7 each member was resolved on its own and the result was
+  repaired afterwards, so one package's entry points could come from two builds ("stitching", `NG0203` only once a
+  borrowed entry point such as `rxjs-interop` runs). 4.8 elects each pool as one family and serves each package from
+  one build.
+- **Why 4.8 is better:** it guarantees that a remote runs a whole family from one build that shipped it together. The
+  cost is visible and intended: more downloads and `scopes`, and a global version that may move to an older build
+  that serves more remotes.

@@ -16,16 +16,17 @@ copy so the user's workspace and `.angular/` cache stay untouched:
 ```bash
 rsync -a --exclude node_modules --exclude dist --exclude .angular <workspace>/ <scratch>/ws/
 ln -s <workspace>/node_modules <scratch>/ws/node_modules     # read-only use; never write into it
-cd <scratch>/ws && npx ng build <project> --configuration development   # once per host and remote
+cd <scratch>/ws && npx ng build <project> --configuration development   # Angular; a development build per shell and remote
 node <skill>/scripts/serve.mjs 4200:dist/host/browser 4201:dist/mfe1/browser &
 ```
 
 - Serve every participant on the port its manifest URL names. Manifests are often inline in the
-  host's `main.ts`: `grep -o 'https\?://[^"]*remoteEntry.json' dist/host/browser/main.js`.
+  shell's `main.ts`: `grep -o 'https\?://[^"]*remoteEntry.json' dist/host/browser/main.js`.
 - `serve.mjs` sends CORS headers and `Cache-Control: no-store`, and falls back to `index.html` for
   routes without an extension. Kill it when you're done.
 - A dev build with `sse: true` logs `EventSource's response has a MIME type ("text/html")` and
-  `[NF][0]: [SSE] Connection error` on a static server. That's noise.
+  `[NF][0]: [SSE] Connection error` on a static server. That's noise. It can also put `…:build-notifications` (`net::ERR_ABORTED`) in
+  `failedRequests`.
 - Set `logLevel: 'debug'` in the copy's `initFederation` options before building. Several failures
   are silent at the default level (Step 3).
 
@@ -94,12 +95,16 @@ diff <(curl -s <good>/remoteEntry.json | jq -S .) <(curl -s <bad>/remoteEntry.js
 
 ## With Chrome MCP tools instead
 
-// TODO: untested. The extension wasn't connected when this was written.
-
-`navigate` to the URL → `read_console_messages` with `pattern: "NF|specifier|integrity|404"` →
-`read_network_requests` with `urlPattern: "remoteEntry"`, then `".js"` → `javascript_tool` with the
-body of any console script (each is one expression, so its value is returned). For a cold run: `localStorage.clear(); sessionStorage.clear(); location.reload()`.
-// TODO: confirm that messages logged during init, before the tool attached, are returned.
+- Call `read_console_messages` and `read_network_requests` once **before** loading the page: tracking starts on the
+  first call.
+- Network requests from the page load are then captured, but init-time console messages may still be missing.
+  Messages logged after the tool attached are returned. If init-time lines are missing, use `nf-capture.mjs`, ask the
+  user for the console (Preserve log), or re-trigger the failure from `javascript_tool`:
+  `await importShim('<remote>/<key>').catch((e) => e.message)` (or `import()` in native mode) returns the same error text.
+- Run a console script with `javascript_tool` (paste the file; it is one expression). Read its output with
+  `read_console_messages` (pattern: a key you expect), not from the tool's return value, which may redact values such
+  as bare version strings. Or return `JSON.stringify(...)` yourself.
+- Cold run: `localStorage.clear(); sessionStorage.clear(); location.reload()`.
 
 ## Reporting upstream
 
@@ -107,8 +112,11 @@ Include:
 - Exact versions of core, adapter, and orchestrator or classic runtime, and whether it's the v4-bridge
 - The `nf-capture` report, or the DevTools extension's **Export JSON** (v4 only)
 - Every `remoteEntry.json` and the manifest
-- The host's `initFederation` options
+- The shell's `initFederation` options
 - The smallest edit from Bisect that switches working and broken
 
-// TODO: which repo gets which issue (native-federation-core, orchestrator, angular-adapter, or module-federation-plugin for v3).
+Report where the defect lives: Angular- or bundler-specific behaviour goes to that adapter's repo, bundler-agnostic
+build output (`remoteEntry.json`, shared bundles) to native-federation-core, and runtime behaviour to the
+orchestrator. v3 and the classic runtime (any version) are deprecated: don't file issues for them; advise migrating
+to v4 and the orchestrator.
 
