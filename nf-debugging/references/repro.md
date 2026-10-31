@@ -48,7 +48,7 @@ and prints one JSON report:
 | `pageErrors[]` | Uncaught errors and rejections |
 | `failedRequests[]` | Network failures and status ≥ 400. An SRI block on a 200 response appears only in `console` |
 | `entries[]` | Every `.json` response (manifest, `remoteEntry.json`): `url`, `status`, `contentType`, and `htmlBody` (the body starts with `<`, e.g. an SPA fallback). A remote missing here was not fetched (warm cache) |
-| `importMaps[]` | Every DOM map, plus `importShim.getImportMap()` in shim mode |
+| `importMaps[]` | Every DOM map, plus `importShim.getImportMap()` when es-module-shims is loaded; `effective` marks the map the browser resolves against |
 | `runtime` | Output of `detect-runtime.js` |
 | `orchestratorStorage` | Output of `dump-orchestrator-storage.js`: per namespace, the raw `values` and the `verdicts` rows |
 | `classicState` | Output of `dump-classic-state.js` (classic runtime only) |

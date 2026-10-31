@@ -132,8 +132,11 @@ hash an entry names. An SRI block on a 200 response shows only in the console, n
 
 ### 5. Inspect the effective import map
 
-Run [scripts/dump-import-map.js](scripts/dump-import-map.js). In shim mode, trust
-`importShim.getImportMap()` over the DOM.
+Run [scripts/dump-import-map.js](scripts/dump-import-map.js) and read the map marked `effective`. In shim mode
+(an `importmap-shim` tag), that is `importShim.getImportMap()`, which you trust over the DOM. A loaded `importShim`
+alone doesn't mean shim mode: next to a native `importmap` its map is empty and not effective. If the script warns
+that `shimMode` is on with native maps, the page is misconfigured: `importShim()` calls (and loaders that use it)
+can't resolve shared packages.
 Gather: is the failing specifier mapped, and from which scope? Resolve it by hand: take the URL of
 the *importing file*, find the most specific scope prefix that has the specifier, else `imports`.
 For a duplicate instance, list every URL a package is mapped to and which files resolve to each. To test one
