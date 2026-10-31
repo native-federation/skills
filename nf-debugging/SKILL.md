@@ -132,8 +132,9 @@ hash an entry names. An SRI block on a 200 response shows only in the console, n
 
 ### 5. Inspect the effective import map
 
-Run [scripts/dump-import-map.js](scripts/dump-import-map.js). In shim mode, trust
-`importShim.getImportMap()` over the DOM.
+Run [scripts/dump-import-map.js](scripts/dump-import-map.js) and read the map marked `effective`. If it warns that
+es-module-shims is in shim mode while the maps are native, see
+[shim vs native mode](references/angular.md#shim-vs-native-mode-modules-fail-before-or-while-loading).
 Gather: is the failing specifier mapped, and from which scope? Resolve it by hand: take the URL of
 the *importing file*, find the most specific scope prefix that has the specifier, else `imports`.
 For a duplicate instance, list every URL a package is mapped to and which files resolve to each. To test one

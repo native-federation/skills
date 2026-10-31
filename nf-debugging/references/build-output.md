@@ -84,8 +84,8 @@ rebuild, dev vs prod.
 `features.strictImports: true`, purging the build caches ([Build caches](#build-caches-stale-output-files)).
 
 **Probe one specifier in the page.** Default to `import('<x>')`; it can't take an importer and executes the module. If
-es-module-shims is loaded, check its mode first (`esmsInitOptions.shimMode`, the `<script type="esms-options">` JSON, or
-any `importmap-shim`/`module-shim` tag): in shim mode only the shim sees the map, so use
+es-module-shims is loaded, check its mode first ([how it's decided](angular.md#shim-vs-native-mode-modules-fail-before-or-while-loading);
+the map [dump-import-map.js](../scripts/dump-import-map.js) marks `effective` tells you): in shim mode only the shim sees the map, so use
 `importShim.resolve('<x>', '<importer URL>')`. It resolves without fetching and throws the es-module-shims wording when
 `<x>` isn't mapped. Pass the URL of the file that fails to import `<x>` (from the error's "imported from"): remotes
 resolve through their own scope, and without it you only test the top-level `imports`. A shell can supply its own
