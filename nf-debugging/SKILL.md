@@ -1,6 +1,14 @@
 ---
 name: nf-debugging
-description: Finds the cause of a Native Federation micro-frontend failure at runtime (ESM + import maps; `@softarc/native-federation*`, `@angular-architects/native-federation*`), in the browser or during SSR, on Native Federation v3 and v4. Use whenever a federated shell or remote fails: "Failed to resolve module specifier" / "Unable to resolve specifier", a remote or `remoteEntry.json` that won't load, initFederation / loadRemoteModule / initRemoteEntry errors, a framework running twice (NG0203, injector errors, "Invalid hook call"), version or pooling warnings, or a deploy that doesn't show up. Trigger on a pasted console error alone when the project uses Native Federation. Not for webpack Module Federation, build-time errors, or writing the fix (nf-development).
+description: >-
+  Finds the cause of a Native Federation micro-frontend failure at runtime (ESM + import maps;
+  `@softarc/native-federation*`, `@angular-architects/native-federation*`), in the browser or during SSR, on
+  Native Federation v3 and v4. Use whenever a federated shell or remote fails: "Failed to resolve module
+  specifier" / "Unable to resolve specifier", a remote or `remoteEntry.json` that won't load, initFederation /
+  loadRemoteModule / initRemoteEntry errors, a framework running twice (NG0203, injector errors, "Invalid hook
+  call"), version or pooling warnings, or a deploy that doesn't show up. Trigger on a pasted console error alone
+  when the project uses Native Federation. Not for webpack Module Federation, build-time errors, or writing the
+  fix (nf-development).
 license: MIT
 metadata:
   author: Copyright 2026 The native-federation team
